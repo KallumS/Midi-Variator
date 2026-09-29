@@ -31,6 +31,13 @@
         <source file="mv_vary.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/f5c8b40c55ada0cc72aadfbfe901979ab08158ac/reascripts/mv_vary.lua</source>
         <source file="mv_place.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/f5c8b40c55ada0cc72aadfbfe901979ab08158ac/reascripts/mv_place.lua</source>
       </version>
+      <version name="1.1" author="kallums" time="2026-09-29T23:00:00Z">
+        <changelog><![CDATA[A Scale step. It shows the scale it heard in your clip, and you can pick any root and any of ScaleView's sixteen scales (modes, pentatonics, blues and more). With "Bring the original into this scale" the variations pivot to the new scale - C major into C minor turns every E into Eb - while the original kept inside each variation stays your real one. "Stay in the original's notes" uses only the notes your clip already plays. A step to a neighbouring note is never more than a major third.]]></changelog>
+        <source main="main" file="Midi Variator.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/fdcaad87c14f8a4b7b1f5b944026b8a2d11b48c9/reascripts/Midi%20Variator.lua</source>
+        <source file="mv_theory.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/fdcaad87c14f8a4b7b1f5b944026b8a2d11b48c9/reascripts/mv_theory.lua</source>
+        <source file="mv_vary.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/fdcaad87c14f8a4b7b1f5b944026b8a2d11b48c9/reascripts/mv_vary.lua</source>
+        <source file="mv_place.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/fdcaad87c14f8a4b7b1f5b944026b8a2d11b48c9/reascripts/mv_place.lua</source>
+      </version>
     </reapack>
 
   </category>
