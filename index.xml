@@ -45,6 +45,13 @@
         <source file="mv_vary.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/fbd0d492ec184ccbf1726b0464b2488643e9a852/reascripts/mv_vary.lua</source>
         <source file="mv_place.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/fbd0d492ec184ccbf1726b0464b2488643e9a852/reascripts/mv_place.lua</source>
       </version>
+      <version name="1.2" author="kallums" time="2026-09-29T23:30:00Z">
+        <changelog><![CDATA[Chord quality: a variation can change a chord into a neighbouring kind of chord - C to Cmaj7, C6 or Cadd9; G7 to G9, G7(13), G11 or G7b9; Cmin to Cmin7 or Cdim; sus chords and back. Chords are read and named by ScaleView Pro's chord detector. The bass never moves, a chord struck several times in a row changes every time, and it stays in the scale unless "Chord changes may leave the scale" is ticked. The Chords switch is now two: Chord voicing and Chord quality.]]></changelog>
+        <source main="main" file="Midi Variator.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/c3f1ee3076d1acc50aa515779c0865976e12168f/reascripts/Midi%20Variator.lua</source>
+        <source file="mv_theory.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/c3f1ee3076d1acc50aa515779c0865976e12168f/reascripts/mv_theory.lua</source>
+        <source file="mv_vary.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/c3f1ee3076d1acc50aa515779c0865976e12168f/reascripts/mv_vary.lua</source>
+        <source file="mv_place.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/c3f1ee3076d1acc50aa515779c0865976e12168f/reascripts/mv_place.lua</source>
+      </version>
     </reapack>
 
   </category>
