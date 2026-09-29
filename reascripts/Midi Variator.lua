@@ -15,7 +15,7 @@
  *                 Needs ReaImGui, from the ReaTeam Extensions repository.
  * Author:         Kallum Shah
  * Links:          https://github.com/KallumS/Midi-Variator
- * Version:        1.0
+ * Version:        1.2
  * Provides:
  *   mv_theory.lua
  *   mv_vary.lua
@@ -109,18 +109,22 @@ end
 
 -- Preferences, kept between runs. What the source is belongs to the
 -- project, so it is not saved.
-local st = { amount = 35, focus = 1, keepEnds = 1, grow = 0, count = 4 }
+local st = { amount = 35, focus = 1, keepEnds = 1, grow = 0, count = 4, own = 0, fit = 1, outside = 0 }
 for _, k in ipairs(V.KINDS) do st[k.key] = 1 end
 for _, f in ipairs(V.FEELS) do st[f.key] = 1 end
 
 local LIMITS = { amount = { 0, 100 }, focus = { 1, #V.FOCUS }, keepEnds = { 0, 1 },
-                 grow = { 0, 1 }, count = { 1, 16 } }
+                 grow = { 0, 1 }, count = { 1, 16 }, own = { 0, 1 }, fit = { 0, 1 },
+                 outside = { 0, 1 } }
 for _, k in ipairs(V.KINDS) do LIMITS[k.key] = { 0, 1 } end
 for _, f in ipairs(V.FEELS) do LIMITS[f.key] = { 0, 1 } end
 
 local ui = {
   srcs = nil,        -- what Place.read returned
-  ans = nil,         -- V.analyse of each
+  ans = nil,         -- V.analyse of each: what was heard in it
+  pick = nil,        -- { root, scale } picked in the window, or nil for what was heard
+  work = nil,        -- each source as varied: the original, or it brought into the picked scale
+  prep = nil,        -- the analysis each batch is made from
   seed = 1,
   runs = nil,        -- for each source, the batch of variations previewed
   show = 1,          -- which variation of the batch the roll shows
@@ -161,6 +165,7 @@ local function options()
   o.focus = st.focus
   o.keepEnds = st.keepEnds == 1
   o.grow = st.grow == 1
+  o.outside = st.outside == 1
   for _, k in ipairs(V.KINDS) do o[k.key] = st[k.key] == 1 end
   for _, f in ipairs(V.FEELS) do o[f.key] = st[f.key] == 1 end
   return o
@@ -196,17 +201,41 @@ local function load(quiet)
   end
   ui.srcs, ui.ans = srcs, {}
   for j, src in ipairs(srcs) do ui.ans[j] = V.analyse(src, T) end
+  -- A picked scale belongs to the music it was picked for, not to the user.
+  ui.pick = nil
   ui.show, ui.dirty = 1, true
   say("")
 end
 
+-- What the Scale step asks for, in the engine's terms (see V.prepare).
+local function currentPick()
+  if st.own == 1 then return { own = true } end
+  if ui.pick then return { root = ui.pick.root, scale = ui.pick.scale, fit = st.fit == 1 } end
+  return nil
+end
+
+-- The first source that has a key (drums have none), and its analysis.
+local function heardFirst()
+  for j, an in ipairs(ui.ans or {}) do if an.heardKey then return an, ui.srcs[j] end end
+end
+
+-- The key heard in the first source, as a root and a ScaleView scale.
+local function heardPick()
+  local an = heardFirst()
+  local k = an and an.heardKey
+  if not k then return nil end
+  return { root = k.root, scale = V.scaleIndex(T.SCALES[k.scale].name) }
+end
+
 local function rebuild()
   ui.dirty = false
-  ui.runs = {}
+  ui.runs, ui.work, ui.prep = {}, {}, {}
   if not ui.srcs then return end
-  local o = options()
+  local o, pk = options(), currentPick()
   for j, src in ipairs(ui.srcs) do
-    ui.runs[j] = V.series(src, ui.ans[j], o, ui.seed, st.count, T, j, copyOf(historyFor(src)))
+    ui.work[j], ui.prep[j] = V.prepare(src, T, pk)
+    ui.runs[j] = V.series(ui.work[j], ui.prep[j], o, ui.seed, st.count, T, j, copyOf(historyFor(src)))
+    -- Measured against the true original, so a pivot shows as the change it is.
     for _, var in ipairs(ui.runs[j]) do var.like = V.likeness(src.notes, var.notes) end
   end
   if ui.show > st.count then ui.show = 1 end
@@ -242,9 +271,10 @@ local function makeThem()
     return
   end
   local jobs = {}
-  for j, src in ipairs(ui.srcs) do
+  for j, src in ipairs(ui.work) do
     local lists = {}
     for i, var in ipairs(ui.runs[j]) do lists[i] = var.notes end
+    -- The working copy carries the TRUE original: that is what is kept.
     jobs[j] = { src = src, variations = lists, first = Place.nextIndex(src) }
     -- What this batch changed steers the next one.
     local h = historyFor(src)
@@ -267,24 +297,25 @@ local function makeThem()
 end
 
 local function varySelected()
-  local o = options()
+  local o, pk = options(), currentPick()
   local items = Place.selectedItems()
   local result, count = Place.varyInPlace(items, function(src, k)
-    local an = V.analyse(src, T)
-    return V.vary(src, an, o, V.seedFor(ui.seed, k, 97), T, historyFor(src)).notes
+    local work, an = V.prepare(src, T, pk)
+    return V.vary(work, an, o, V.seedFor(ui.seed, k, 97), T, historyFor(src)).notes
   end)
   newSeed()
   if result ~= Place.OK then say("Select the MIDI items to vary first.", true); return end
-  say(("Varied %s in place, each from its own original."):format(plural(count, "item")))
+  -- Re-read replaced sources first: reading clears the status line.
   if not sourcesAlive() then load(true) end
+  say(("Varied %s in place, each from its own original."):format(plural(count, "item")))
   ui.dirty = true
 end
 
 local function restoreSelected()
   local result, count = Place.restore(Place.selectedItems())
   if result ~= Place.OK then say("None of the selected items is a variation.", true); return end
-  say(("Put the original back in %s."):format(plural(count, "item")))
   if not sourcesAlive() then load(true) end
+  say(("Put the original back in %s."):format(plural(count, "item")))
 end
 
 ------------------------------------------------------------------------------
@@ -312,9 +343,13 @@ local function pick(label, selected, width)
   return hit
 end
 
-local function heading(n, text)
+-- The steps number themselves: drums have no Scale step, and the steps
+-- after it close up rather than skip a number.
+local stepNo = 0
+local function heading(text)
+  stepNo = stepNo + 1
   ImGui.PushStyleColor(ctx, ImGui.Col_Text, STEP)
-  ImGui.Text(ctx, tostring(n))
+  ImGui.Text(ctx, tostring(stepNo))
   ImGui.PopStyleColor(ctx, 1)
   ImGui.SameLine(ctx, 0, 10)
   ImGui.SeparatorText(ctx, text)
@@ -405,7 +440,7 @@ end
 ------------------------------------------------------------------------------
 
 local function drawSource()
-  heading(1, "Source")
+  heading("Source")
   if pick("Use selected items", false, 170) then load() end
   tip("Select one or more MIDI items in the arrange view - an imported .mid file\n" ..
       "is one - then press this. Each is varied on its own track.")
@@ -427,11 +462,98 @@ local function drawSource()
   end
 end
 
+local SCALE_ROW = 6   -- scale buttons to a row
+
+local function pickScale(root, scale)
+  local h = heardPick()
+  if h and h.root == root and h.scale == scale then ui.pick = nil   -- back to what was heard
+  else ui.pick = { root = root, scale = scale } end
+  touched()
+end
+
+local function drawScale()
+  heading("Scale")
+  local an, from = heardFirst()
+  local heard = an.heardKey
+
+  switch("own", "Stay in the original's notes",
+         "Changed and added notes use only the notes the original already\n" ..
+         "plays - nothing new at all. The scale below is set aside.", 0)
+  if st.own == 1 then
+    local names = {}
+    for pc = 0, 11 do
+      if an.played[pc] then names[#names + 1] = T.noteName(heard, pc) end
+    end
+    ImGui.SameLine(ctx, 0, 14)
+    dim("Changes use only " .. table.concat(names, " ") .. ".")
+    return
+  end
+  ImGui.SameLine(ctx, 0, 14)
+  dim(("Heard as %s%s."):format(heard.label, #ui.srcs > 1 and (" in \"" .. from.name .. "\"") or ""))
+
+  local cur = ui.pick or heardPick()
+  label("Root")
+  ImGui.PushID(ctx, "root")
+  for i, r in ipairs(T.ROOTS) do
+    if i > 1 then ImGui.SameLine(ctx) end
+    ImGui.PushID(ctx, i)
+    if pick(r.name, cur.root == i, 34) then pickScale(i, cur.scale) end
+    ImGui.PopID(ctx)
+  end
+  ImGui.PopID(ctx)
+
+  label("Scale")
+  ImGui.PushID(ctx, "scale")
+  for i, sc in ipairs(V.SCALES) do
+    if i > 1 then
+      if (i - 1) % SCALE_ROW == 0 then ImGui.Dummy(ctx, 1, 1); ImGui.SameLine(ctx, LABEL_W)
+      else ImGui.SameLine(ctx) end
+    end
+    ImGui.PushID(ctx, i)
+    if pick(sc.name, cur.scale == i, 150) then pickScale(cur.root, i) end
+    ImGui.PopID(ctx)
+  end
+  ImGui.PopID(ctx)
+
+  if not ui.pick then
+    dim("Pick another scale to take the variations there.")
+    return
+  end
+  if pick("Back to what it heard", false, 200) then ui.pick = nil; touched(); return end
+  tip("Forget the picked scale and use the one heard in the music.")
+
+  local sc = V.pickedScale(T, ui.pick.root, ui.pick.scale)
+  local outside = 0
+  for _, src in ipairs(ui.srcs) do
+    for _, n in ipairs(src.notes) do
+      if (n.chan or 0) ~= V.DRUM_CHANNEL and not sc.pcs[n.pitch % 12] then outside = outside + 1 end
+    end
+  end
+  if outside == 0 then
+    dim(("Every note of the original is in %s already; the changes use its notes."):format(sc.label))
+    return
+  end
+  local changed, v = ImGui.Checkbox(ctx, "Bring the original into this scale", st.fit == 1)
+  if changed then st.fit = v and 1 or 0; touched() end
+  tip("On: the original's notes outside the scale move to its nearest note\n" ..
+      "first - C major into C minor makes every E an Eb - so the variations\n" ..
+      "pivot to the new scale. Off: the original stays as it is, and only\n" ..
+      "the changes use the new scale.")
+  local fitted = {}
+  for _, p in ipairs(ui.prep or {}) do if #p.fitted > #fitted then fitted = p.fitted end end
+  if st.fit == 1 and #fitted > 0 then
+    dim(("Moved into %s: %s."):format(sc.label, V.describeFit(fitted, heard, sc)))
+  elseif st.fit == 0 then
+    dim(("%s of the original outside %s stay as they are; the changes use %s."):format(
+        plural(outside, "note"), sc.label, sc.label))
+  end
+end
+
 local AMOUNT_WORDS = { { 0, "none - exact copies" }, { 1, "a whisper" }, { 21, "subtle" },
                        { 46, "noticeable" }, { 71, "bold, still recognisable" } }
 
 local function drawChanges()
-  heading(2, "What may change")
+  heading("What may change")
 
   label("How much")
   ImGui.SetNextItemWidth(ctx, 240)
@@ -457,7 +579,11 @@ local function drawChanges()
           "out, or - for drums - a ghost note.",
     remove = "A weak note left out (sometimes the note before is held over it),\n" ..
              "or a chord thinned.",
-    chords = "A chord revoiced, rolled like a strum, or coloured (a sus or add9).",
+    chords = "A chord revoiced (an inner note moved an octave) or rolled like a strum.",
+    quality = "A chord changed to a neighbouring quality, read by ScaleView Pro:\n" ..
+              "C to Cmaj7, C6 or Cadd9; G7 to G9, G13, G11 or G7b9; Cmin to Cmin7\n" ..
+              "or Cdim; a sus chord, or one resolved. The bass stays where it is,\n" ..
+              "and a chord struck several times in a row changes every time.",
     timing = "Each moment a few milliseconds early or late, as a player would be.",
     velocity = "A little louder or softer, with a gentle swell across the phrase.",
     lengths = "Notes held a touch longer or shorter.",
@@ -466,12 +592,25 @@ local function drawChanges()
   label("Changes")
   local first = true
   for _, k in ipairs(V.KINDS) do
-    local shown = not ((k.key == "chords" and not hasChords()) or (k.key == "notes" and allDrums()))
+    local chordy = k.key == "chords" or k.key == "quality"
+    local shown = not ((chordy and not hasChords()) or (k.key == "notes" and allDrums()))
     if shown then
       if not first then ImGui.SameLine(ctx) end
       switch(k.key, k.name, hints[k.key])
       first = false
     end
+  end
+
+  -- Only while Chord quality is on and there are chords for it to change.
+  if st.quality == 1 and hasChords() then
+    ImGui.Dummy(ctx, 1, 1)
+    ImGui.SameLine(ctx, LABEL_W)
+    local c, v = ImGui.Checkbox(ctx, "Chord changes may leave the scale", st.outside == 1)
+    if c then st.outside = v and 1 or 0; touched() end
+    tip("Off: a chord only changes into one whose notes are in the scale -\n" ..
+        "in C major, G7 can become G9 or G13, C can become Cmaj7 or C6.\n" ..
+        "On: it may borrow notes from outside - C can become Cmin or Caug,\n" ..
+        "G7 can become G7b9, Amin can become Adim.")
   end
 
   label("Feel")
@@ -499,7 +638,7 @@ local function drawChanges()
 end
 
 local function drawVariations()
-  heading(3, "Variations")
+  heading("Variations")
 
   label("How many")
   ImGui.SetNextItemWidth(ctx, 240)
@@ -564,7 +703,12 @@ local function drawVariations()
   local selected = Place.selectedItems()
   if #selected > 0 then
     ImGui.SameLine(ctx)
-    if pick("Vary selected in place", false, 190) then varySelected() end
+    if pick("Vary selected in place", false, 190) then
+      varySelected()
+      -- Varying can replace items (pooled copies, .mid files, loops), and
+      -- REAPER refuses a deleted one: read the selection again.
+      selected = Place.selectedItems()
+    end
     tip("Gives every selected MIDI item a new variation of its own original,\n" ..
         "where it is. Select a row of copies of a phrase and press this to\n" ..
         "vary them all. One undo step.")
@@ -575,7 +719,7 @@ local function drawVariations()
     end
     if anyVariation then
       ImGui.SameLine(ctx)
-      if pick("Put back the original", false, 180) then restoreSelected() end
+      if pick("Put back the original", false, 180) then restoreSelected() end   -- the last use of `selected`
       tip("Every selected variation plays its original again. It stays a\n" ..
           "variation, so it can be varied again later.")
     end
@@ -583,11 +727,17 @@ local function drawVariations()
 end
 
 local function frame()
+  stepNo = 0
   if ui.dirty then rebuild() end
 
   drawSource()
   if ui.dirty then rebuild() end   -- a source just read
   if ui.srcs then
+    if not allDrums() then
+      stepGap()
+      drawScale()
+      if ui.dirty then rebuild() end   -- a scale just picked
+    end
     stepGap()
     drawChanges()
     stepGap()

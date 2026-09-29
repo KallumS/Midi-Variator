@@ -245,11 +245,30 @@ local api = {
   SetExtState = function(s, k, v, persist) P.ext[s .. ":" .. k] = v end,
 }
 
+-- REAPER refuses a deleted item or take outright - "bad argument #1 to
+-- 'GetSetMediaItemInfo_String' (MediaItem expected)" - so the mock does
+-- too, for every function but the one that asks whether it is still there.
+local ASKS = { ValidatePtr2 = true }
+local function refuseDead(name, f)
+  if ASKS[name] then return f end
+  return function(...)
+    for i = 1, select("#", ...) do
+      local x = select(i, ...)
+      if type(x) == "table" and (x.kind == "item" or x.kind == "take") and x.alive == false then
+        error(("bad argument #%d to '%s' (Media%s expected): it was deleted"):format(
+          i, name, x.kind == "item" and "Item" or "Item_Take"), 2)
+      end
+    end
+    return f(...)
+  end
+end
+
 function P.install()
   reaper = setmetatable({}, {
     __index = function(_, k)
       local f = api[k]
       if f == nil then error("the script called reaper." .. tostring(k) .. ", which the mock does not have") end
+      if type(f) == "function" then return refuseDead(k, f) end
       return f
     end,
     __newindex = function(_, k, v) api[k] = v end,

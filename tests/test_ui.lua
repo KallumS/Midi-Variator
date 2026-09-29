@@ -259,11 +259,14 @@ local tr, item = project("noir", "Noir")
 P.ext = {}
 start()                       -- reads the selection it starts with
 frame()
-eq(#g.headings, 3, "a selected item on start: all three steps")
+eq(#g.headings, 4, "a selected item on start: all four steps")
+eq(g.headings[2], "Scale", "the second is the scale")
 ok(has(g.texts, "\"Noir\"   8 bars of 4/4, 28 notes, D Minor (Natural)"), "the source described")
 ok(has(g.texts, "Variation 1 of 4"), "four variations previewed")
 ok(has(g.texts, "subtle - about 2 changes in 28 notes"), "the amount said in words and changes")
-ok(not has(g.buttons, "Chords"), "no Chords switch for a melody: no dead controls")
+ok(not has(g.buttons, "Chord voicing") and not has(g.buttons, "Chord quality"),
+   "no chord switches for a melody: no dead controls")
+ok(not has(g.checkboxes, "Chord changes may leave the scale"), "nor the box to leave the scale")
 ok(has(g.buttons, "Notes") and has(g.buttons, "Rhythm"), "the other switches are there")
 ok(not has(g.buttons, "Put back the original"), "nothing to put back in an original")
 checkInk("melody")
@@ -373,7 +376,17 @@ P.ext = {}
 project("piano", "Piano")
 start()
 frame()
-ok(has(g.buttons, "Chords"), "a piano part gets the Chords switch")
+ok(has(g.buttons, "Chord voicing") and has(g.buttons, "Chord quality"), "a piano part gets the chord switches")
+ok(has(g.checkboxes, "Chord changes may leave the scale"), "and, with Chord quality on, the box to leave the scale")
+click("Chord quality")
+ok(not has(g.checkboxes, "Chord changes may leave the scale"), "Chord quality off: the box goes, no dead controls")
+click("Chord quality")
+toggle("Chord changes may leave the scale")
+atexitFn()
+ok(P.ext["MidiVariator:state"]:find("outside=1"), "leaving the scale is remembered")
+P.ext = {}
+start()
+frame()
 checkInk("piano")
 
 project("drums", "Beat", 8)
@@ -420,6 +433,164 @@ do
 end
 
 ------------------------------------------------------------------------------
+-- Varying in place items that have to be replaced
+--
+-- Pasted copies are often pooled, and an imported .mid can be played from
+-- disk: those are replaced by new items, not rewritten (decision 0005).
+-- The window once kept its list of selected items from before the click
+-- and asked REAPER about the deleted ones - "bad argument #1 to
+-- 'GetSetMediaItemInfo_String' (MediaItem expected)" in REAPER itself.
+------------------------------------------------------------------------------
+
+do
+  P.reset()
+  P.ext = {}
+  local tr = P.track("Piano")
+  local copies = {
+    P.item(tr, 0, 16, F.twinkle, "Twinkle", { pooled = true }),
+    P.item(tr, 16, 16, F.twinkle, "Twinkle", { pooled = true }),
+    P.item(tr, 32, 16, F.twinkle, "Twinkle", { file = "/music/twinkle.mid" }),
+  }
+  P.selected = { copies[1], copies[2], copies[3] }
+  start()
+  frame()
+  click("Vary selected in place")
+  ok(has(g.texts, "Varied 3 items in place"), "pooled and file items are varied in place")
+  for i, it in ipairs(copies) do ok(not it.alive, ("copy %d was replaced"):format(i)) end
+  eq(#P.selected, 3, "by three new items, selected")
+  ok(has(g.buttons, "Put back the original"), "which can be put back")
+  click("Vary selected in place")
+  ok(has(g.texts, "Varied 3 items in place"), "and varied again")
+  click("Put back the original")
+  ok(has(g.texts, "Put the original back in 3 items."), "and put back")
+end
+
+------------------------------------------------------------------------------
+-- The scale: picking one, pivoting, and staying in the original's notes
+------------------------------------------------------------------------------
+
+local function pcsOfItems(items)
+  local pcs = {}
+  for _, it in ipairs(items) do
+    for _, n in ipairs(P.notesOf(it)) do pcs[n.pitch % 12] = true end
+  end
+  return pcs
+end
+
+do
+  P.ext = {}
+  local tr = project("twinkle", "Twinkle")
+  start()
+  frame()
+  ok(has(g.texts, "Heard as C Major."), "it says what it heard")
+  eq(g.ink[buttonIndex("C")].bg, 0xFFF200FF, "the heard root is lit")
+  eq(g.ink[buttonIndex("Major")].bg, 0xFFF200FF, "and the heard scale")
+  ok(not has(g.buttons, "Back to what it heard"), "nothing to go back to yet: no dead controls")
+  ok(not has(g.checkboxes, "Bring the original into this scale"), "nor anything to bring into a scale")
+  ok(has(g.texts, "Pick another scale to take the variations there."), "and it says what picking does")
+
+  -- Pivot to C minor.
+  click("Minor (Natural)")
+  eq(g.ink[buttonIndex("Minor (Natural)")].bg, 0xFFF200FF, "the picked scale is lit")
+  ok(has(g.buttons, "Back to what it heard"), "now there is a way back")
+  ok(has(g.checkboxes, "Bring the original into this scale"), "and the pivot is offered")
+  ok(has(g.texts, "Moved into C Minor (Natural): E -> Eb, A -> Ab."), "and says what the pivot moves")
+  click("Make 4 variations")
+  local made = {}
+  for i = 2, 5 do made[#made + 1] = tr.items[i] end
+  local pcs = pcsOfItems(made)
+  local cminor = { [0] = true, [2] = true, [3] = true, [5] = true, [7] = true, [8] = true, [10] = true }
+  local outside = {}
+  for pc in pairs(pcs) do if not cminor[pc] then outside[#outside + 1] = pc end end
+  eq(#outside, 0, "every note made is in C minor")
+  local kept = V.decode(tr.items[2].ext.MidiVariator)
+  local hasE = false
+  for _, n in ipairs(kept) do if n.pitch == 64 then hasE = true end end
+  ok(hasE, "but the original kept inside is the real one, in C major")
+  click("Put back the original")
+  ok(pcsOfItems({ tr.items[2] })[4], "so putting it back brings the E back")
+
+  -- Vary in place follows the picked scale too.
+  click("Vary selected in place")
+  pcs = pcsOfItems(made)
+  outside = {}
+  for pc in pairs(pcs) do if not cminor[pc] then outside[#outside + 1] = pc end end
+  eq(#outside, 0, "varied in place: still all in C minor")
+
+  -- Not pivoting: the original's notes stay, the changes use the scale.
+  P.selected = { tr.items[1] }
+  toggle("Bring the original into this scale")
+  ok(has(g.texts, "notes of the original outside C Minor (Natural) stay as they are"),
+     "unticked, it says the original stays as it is")
+
+  -- Picking the heard key again is going back.
+  click("Major")
+  ok(not has(g.buttons, "Back to what it heard"), "picking what it heard goes back to it")
+  click("D")
+  ok(has(g.buttons, "Back to what it heard"), "a new root is a pick")
+  click("Back to what it heard")
+  eq(g.ink[buttonIndex("C")].bg, 0xFFF200FF, "back: C lit again")
+  ok(not has(g.buttons, "Back to what it heard"), "and the way back hides itself")
+
+  -- A scale every note is already in: nothing to bring in.
+  click("F")
+  ok(has(g.texts, "Every note of the original is in F Major already"), "Twinkle has no B: F major holds it all")
+  ok(not has(g.checkboxes, "Bring the original into this scale"), "and no box that would do nothing")
+
+  -- Reading another item forgets the pick: it belonged to that music.
+  click("Use selected items")
+  ok(not has(g.buttons, "Back to what it heard"), "a new source starts from what is heard")
+
+  -- Stay in the original's notes: the picker goes away.
+  click("Stay in the original's notes")
+  ok(has(g.texts, "Changes use only C D E F G A."), "it lists the notes it will use")
+  ok(not has(g.buttons, "Minor (Natural)") and not has(g.buttons, "Db"), "no picker while it is on")
+  eq(g.ink[buttonIndex("Stay in the original's notes")].bg, 0xFFF200FF, "the switch is lit")
+  local before = #tr.items
+  slide("##amount", 100)
+  click("Make 4 variations")
+  made = {}
+  for i = before + 1, #tr.items do made[#made + 1] = tr.items[i] end
+  eq(#made, 4, "made")
+  pcs = pcsOfItems(made)
+  ok(not pcs[11] and not pcs[10], "no B or Bb: only the notes Twinkle plays")
+
+  atexitFn()
+  local blob = P.ext["MidiVariator:state"]
+  ok(blob:find("own=1") and blob:find("fit=0"), "both switches are remembered: " .. blob)
+  P.ext["MidiVariator:state"] = "own=5;fit=-2"
+  start()
+  frame()
+  eq(g.ink[buttonIndex("Stay in the original's notes")].bg, 0xFFF200FF, "own clamped to on")
+end
+
+-- Drums have no scale step, and the steps close up.
+do
+  project("drums", "Beat", 8)
+  start()
+  frame()
+  eq(#g.headings, 3, "drums: three steps")
+  eq(g.headings[2], "What may change", "the scale step is left out")
+  ok(has(g.texts, "2"), "and numbered on without a gap")
+end
+
+-- Drums first and a melody second: the scale is the melody's.
+do
+  P.reset()
+  local a = P.track("Drums")
+  local b = P.track("Tune")
+  P.selected = { P.item(a, 0, 8, F.drums, "Beat"), P.item(b, 0, 16, F.twinkle, "Tune") }
+  P.ext = {}
+  start()
+  frame()
+  ok(has(g.texts, "Heard as C Major in \"Tune\"."), "the key comes from the item that has one, named")
+  click("Minor (Natural)")
+  click("Make 4 variations")
+  eq(#a.items, 5, "the drums are varied")
+  eq(#b.items, 5, "and the tune")
+end
+
+------------------------------------------------------------------------------
 -- Every button, from a fresh start, in every state
 ------------------------------------------------------------------------------
 
@@ -432,6 +603,13 @@ local STATES = {
       start(); frame(); click("Make 4 variations")
     end },
   { "nothing selected", function() P.reset() end },
+  -- Picked in the window, so done after the script starts (third entry).
+  { "a scale picked", function() project("twinkle", "Twinkle") end,
+    function() click("Dorian") end },
+  { "a pivot switched off", function() project("twinkle", "Twinkle") end,
+    function() click("Minor (Natural)"); toggle("Bring the original into this scale") end },
+  { "own notes", function() project("twinkle", "Twinkle") end,
+    function() click("Stay in the original's notes") end },
 }
 
 local reached = {}
@@ -440,12 +618,14 @@ for _, state in ipairs(STATES) do
   P.ext = {}
   start()
   frame()
+  if state[3] then state[3]() end
   local count = #g.buttons
   for i = 1, count do
     state[2]()
     P.ext = {}
     start()
     frame()
+    if state[3] then state[3]() end
     local label = g.buttons[i]
     if label then
       local okCall, err = pcall(function()
@@ -459,10 +639,11 @@ for _, state in ipairs(STATES) do
     end
   end
 end
-for _, name in ipairs({ "Use selected items", "Notes", "Rhythm", "Add notes", "Leave notes out", "Chords",
-                        "Timing", "Velocity", "Lengths", "Anywhere", "Towards the end", "Towards the start",
+for _, name in ipairs({ "Use selected items", "Notes", "Rhythm", "Add notes", "Leave notes out",
+                        "Chord voicing", "Chord quality", "Timing", "Velocity", "Lengths", "Anywhere", "Towards the end", "Towards the start",
                         "<", ">", "New set", "Make 4 variations", "Vary selected in place",
-                        "Put back the original" }) do
+                        "Put back the original", "Stay in the original's notes", "Back to what it heard",
+                        "Db", "B", "Major", "Minor Pentatonic", "Diminished Half-Whole" }) do
   ok(reached[name], "the sweep reached '" .. name .. "'")
 end
 

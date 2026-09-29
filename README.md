@@ -64,15 +64,41 @@ button lights up while the window is open.
    something). REAPER turns it into a MIDI item.
 2. **Select that item** and run Midi Variator. If the window is already
    open, press **Use selected items**.
-3. **Choose what may change** (step 2 in the window) - see below.
-4. **Look at the preview.** The picture shows your original in grey and the
+3. **Check the scale** (step 2). It shows the scale it heard in your
+   clip. Leave it, or pick another to take your variations there - see
+   *The scale* below.
+4. **Choose what may change** (step 3) - see below.
+5. **Look at the preview.** The picture shows your original in grey and the
    variation in yellow, with a list of exactly what changed underneath
    ("Bar 3, beat 2: F4 moved up to G4"). Use **<** and **>** to look through
    the whole set, and **New set** for a different set.
-5. Press **Make 4 variations** (or however many you chose). They go on the
+6. Press **Make 4 variations** (or however many you chose). They go on the
    same track straight after your original, one after another.
 
 It is all one undo step: Ctrl+Z (Cmd+Z) takes a whole batch back.
+
+### The scale
+
+It listens to your clip and works out which scale it is in ("Heard as
+D Minor (Natural)"). Every note a variation changes or adds stays in that
+scale - plus any other note your original plays, so a minor tune's raised
+7th stays available.
+
+| Control | What it does |
+| --- | --- |
+| **Root** and **Scale** | Pick a different scale: any of the 18 roots and ScaleView's 16 scales (major and minor, the modes, pentatonics, blues, whole tone, diminished). Picking the one it heard goes back to it. |
+| **Bring the original into this scale** | Shown when some of your original's notes are not in the picked scale. **On** (the default): those notes move to the nearest note of the new scale first, so the variations *pivot* - pick C minor for a C major tune and every E becomes Eb, every A becomes Ab. The window lists exactly what moves. **Off**: your original stays as it is, and only the changes use the new scale. |
+| **Back to what it heard** | Forget the picked scale. |
+| **Stay in the original's notes** | Changes and added notes use **only** the notes your original already plays - nothing new at all. Detection and the picker are set aside while it is on. Good for pentatonic tunes, or anything where one foreign note would stand out. |
+
+Whatever scale you pick, **the original kept inside each variation is
+always your real original**, so *Put back the original* restores it exactly
+- a pivot never overwrites it.
+
+A "step" to a neighbouring note is never more than a major third, even in
+a pentatonic scale or with a three-note motif's own notes.
+
+Drums have no scale, so a drum clip has no Scale step.
 
 ### What may change
 
@@ -83,7 +109,9 @@ It is all one undo step: Ctrl+Z (Cmd+Z) takes a whole batch back.
 | **Rhythm** | A long note struck twice instead of held, two repeated notes tied into one, or a note (or chord) coming in a little early - "pushed", as in pop and jazz - or a little late. |
 | **Add notes** | A passing note filling in a leap, a quick grace note, a pickup note leading into a note after a rest, an extra note in a chord, or - for drums - a quiet "ghost" hit. |
 | **Leave notes out** | A weak note left out (sometimes the note before rings on over the gap instead), or a chord thinned by one inner note. |
-| **Chords** | A chord revoiced (an inner note moved an octave), rolled like a strum, or coloured (a note moved a step - a third to a fourth makes a "sus" chord). Only shown when your clip has chords. |
+| **Chord voicing** | A chord revoiced (an inner note moved an octave) or rolled like a strum. Only shown when your clip has chords. |
+| **Chord quality** | A chord changed into a neighbouring kind of chord. The chord is read by ScaleView Pro's chord detector - the same one, so the same names. **Adding a note**: C to Cmaj7, C6 or Cadd9; G7 to G9, G7(13) or G7b9; Cmin7 to Cmin9 or Cmin11; Cdim to Cdim7. **Moving a note**: sus4 and sus2 chords (and back), minor to major and back, Cmin to Cdim, Cmin7 to Cmin7b5, C to Caug, G7 to G11. **Dropping a note**: G7 to G. The bass never moves, and a chord struck several times in a row changes every time it is struck. The list of changes says what each chord became ("Bar 2, beat 1: G7 became G9"). Only shown when your clip has chords. |
+| **Chord changes may leave the scale** | Shown while *Chord quality* is on. **Off** (the default): a chord only changes into one whose notes are in the scale - in C major, G7 can become G9 or G11, C can become Cmaj7. **On**: it may borrow notes from outside - C can become Cmin or Caug, G7 can become G7b9 (the diminished sound), Amin can become Adim. |
 | **Timing, Velocity, Lengths** | The "feel": each moment a few milliseconds early or late, a little louder or softer with a gentle swell across the phrase, notes held a touch longer or shorter. Switch these off if you want the notes to stay exactly on the grid. |
 | **Where** | *Anywhere*, *Towards the end* or *Towards the start*. **Towards the end** is the classic way to vary a repeated motif: it starts the same and answers differently. |
 | **Keep the first and last notes** | The notes that open and close the phrase stay exactly as they are, so every variation is recognisably the same motif. On by default. |
@@ -96,12 +124,14 @@ A switch that is **on is yellow**, off is grey.
 
 - **At most one change to any one moment** of the music, and never more
   than about a third of the notes changed, however high you set *How much*.
-- **Changed notes stay in the key** - it works out which seven notes your
+- **Changed notes stay in the key** (unless you let chord changes leave
+  the scale) - it works out which seven notes your
   music is built from, and also allows any note your original actually
   plays (so a minor tune's raised 7th stays available).
 - **Nothing new grinds.** A changed note is never put a semitone against
   something sounding at the same time, unless the original already had
-  that clash.
+  that clash. A changed chord may carry its own colour (Cmaj7's B against
+  its C is the point of it) but never grinds against the tune over it.
 - **Drums keep their drums.** Anything on MIDI channel 10 is treated as
   drums: no drum is ever changed into a different drum.
 - **A series spreads out.** In a batch of variations, a note already changed
@@ -142,6 +172,10 @@ MIDI - it needs a MIDI item.
 
 **It cannot find `mv_vary.lua`** (or another `mv_` file). The four files
 are not all in the same folder.
+
+**It heard the wrong scale.** Pick the right root and scale in step 2. If
+the only difference is a note or two, untick *Bring the original into this
+scale* so your original is left exactly as it is.
 
 **The variations are too different / not different enough.** Turn **How
 much** down or up, or switch off the kinds of change you don't want. For
