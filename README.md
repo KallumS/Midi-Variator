@@ -109,7 +109,9 @@ Drums have no scale, so a drum clip has no Scale step.
 | **Rhythm** | A long note struck twice instead of held, two repeated notes tied into one, or a note (or chord) coming in a little early - "pushed", as in pop and jazz - or a little late. |
 | **Add notes** | A passing note filling in a leap, a quick grace note, a pickup note leading into a note after a rest, an extra note in a chord, or - for drums - a quiet "ghost" hit. |
 | **Leave notes out** | A weak note left out (sometimes the note before rings on over the gap instead), or a chord thinned by one inner note. |
-| **Chords** | A chord revoiced (an inner note moved an octave), rolled like a strum, or coloured (a note moved a step - a third to a fourth makes a "sus" chord). Only shown when your clip has chords. |
+| **Chord voicing** | A chord revoiced (an inner note moved an octave) or rolled like a strum. Only shown when your clip has chords. |
+| **Chord quality** | A chord changed into a neighbouring kind of chord. The chord is read by ScaleView Pro's chord detector - the same one, so the same names. **Adding a note**: C to Cmaj7, C6 or Cadd9; G7 to G9, G7(13) or G7b9; Cmin7 to Cmin9 or Cmin11; Cdim to Cdim7. **Moving a note**: sus4 and sus2 chords (and back), minor to major and back, Cmin to Cdim, Cmin7 to Cmin7b5, C to Caug, G7 to G11. **Dropping a note**: G7 to G. The bass never moves, and a chord struck several times in a row changes every time it is struck. The list of changes says what each chord became ("Bar 2, beat 1: G7 became G9"). Only shown when your clip has chords. |
+| **Chord changes may leave the scale** | Shown while *Chord quality* is on. **Off** (the default): a chord only changes into one whose notes are in the scale - in C major, G7 can become G9 or G11, C can become Cmaj7. **On**: it may borrow notes from outside - C can become Cmin or Caug, G7 can become G7b9 (the diminished sound), Amin can become Adim. |
 | **Timing, Velocity, Lengths** | The "feel": each moment a few milliseconds early or late, a little louder or softer with a gentle swell across the phrase, notes held a touch longer or shorter. Switch these off if you want the notes to stay exactly on the grid. |
 | **Where** | *Anywhere*, *Towards the end* or *Towards the start*. **Towards the end** is the classic way to vary a repeated motif: it starts the same and answers differently. |
 | **Keep the first and last notes** | The notes that open and close the phrase stay exactly as they are, so every variation is recognisably the same motif. On by default. |
@@ -122,12 +124,14 @@ A switch that is **on is yellow**, off is grey.
 
 - **At most one change to any one moment** of the music, and never more
   than about a third of the notes changed, however high you set *How much*.
-- **Changed notes stay in the key** - it works out which seven notes your
+- **Changed notes stay in the key** (unless you let chord changes leave
+  the scale) - it works out which seven notes your
   music is built from, and also allows any note your original actually
   plays (so a minor tune's raised 7th stays available).
 - **Nothing new grinds.** A changed note is never put a semitone against
   something sounding at the same time, unless the original already had
-  that clash.
+  that clash. A changed chord may carry its own colour (Cmaj7's B against
+  its C is the point of it) but never grinds against the tune over it.
 - **Drums keep their drums.** Anything on MIDI channel 10 is treated as
   drums: no drum is ever changed into a different drum.
 - **A series spreads out.** In a batch of variations, a note already changed

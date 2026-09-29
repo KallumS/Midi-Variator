@@ -15,7 +15,7 @@
  *                 Needs ReaImGui, from the ReaTeam Extensions repository.
  * Author:         Kallum Shah
  * Links:          https://github.com/KallumS/Midi-Variator
- * Version:        1.1.1
+ * Version:        1.2
  * Provides:
  *   mv_theory.lua
  *   mv_vary.lua
@@ -109,12 +109,13 @@ end
 
 -- Preferences, kept between runs. What the source is belongs to the
 -- project, so it is not saved.
-local st = { amount = 35, focus = 1, keepEnds = 1, grow = 0, count = 4, own = 0, fit = 1 }
+local st = { amount = 35, focus = 1, keepEnds = 1, grow = 0, count = 4, own = 0, fit = 1, outside = 0 }
 for _, k in ipairs(V.KINDS) do st[k.key] = 1 end
 for _, f in ipairs(V.FEELS) do st[f.key] = 1 end
 
 local LIMITS = { amount = { 0, 100 }, focus = { 1, #V.FOCUS }, keepEnds = { 0, 1 },
-                 grow = { 0, 1 }, count = { 1, 16 }, own = { 0, 1 }, fit = { 0, 1 } }
+                 grow = { 0, 1 }, count = { 1, 16 }, own = { 0, 1 }, fit = { 0, 1 },
+                 outside = { 0, 1 } }
 for _, k in ipairs(V.KINDS) do LIMITS[k.key] = { 0, 1 } end
 for _, f in ipairs(V.FEELS) do LIMITS[f.key] = { 0, 1 } end
 
@@ -164,6 +165,7 @@ local function options()
   o.focus = st.focus
   o.keepEnds = st.keepEnds == 1
   o.grow = st.grow == 1
+  o.outside = st.outside == 1
   for _, k in ipairs(V.KINDS) do o[k.key] = st[k.key] == 1 end
   for _, f in ipairs(V.FEELS) do o[f.key] = st[f.key] == 1 end
   return o
@@ -577,7 +579,11 @@ local function drawChanges()
           "out, or - for drums - a ghost note.",
     remove = "A weak note left out (sometimes the note before is held over it),\n" ..
              "or a chord thinned.",
-    chords = "A chord revoiced, rolled like a strum, or coloured (a sus or add9).",
+    chords = "A chord revoiced (an inner note moved an octave) or rolled like a strum.",
+    quality = "A chord changed to a neighbouring quality, read by ScaleView Pro:\n" ..
+              "C to Cmaj7, C6 or Cadd9; G7 to G9, G13, G11 or G7b9; Cmin to Cmin7\n" ..
+              "or Cdim; a sus chord, or one resolved. The bass stays where it is,\n" ..
+              "and a chord struck several times in a row changes every time.",
     timing = "Each moment a few milliseconds early or late, as a player would be.",
     velocity = "A little louder or softer, with a gentle swell across the phrase.",
     lengths = "Notes held a touch longer or shorter.",
@@ -586,12 +592,25 @@ local function drawChanges()
   label("Changes")
   local first = true
   for _, k in ipairs(V.KINDS) do
-    local shown = not ((k.key == "chords" and not hasChords()) or (k.key == "notes" and allDrums()))
+    local chordy = k.key == "chords" or k.key == "quality"
+    local shown = not ((chordy and not hasChords()) or (k.key == "notes" and allDrums()))
     if shown then
       if not first then ImGui.SameLine(ctx) end
       switch(k.key, k.name, hints[k.key])
       first = false
     end
+  end
+
+  -- Only while Chord quality is on and there are chords for it to change.
+  if st.quality == 1 and hasChords() then
+    ImGui.Dummy(ctx, 1, 1)
+    ImGui.SameLine(ctx, LABEL_W)
+    local c, v = ImGui.Checkbox(ctx, "Chord changes may leave the scale", st.outside == 1)
+    if c then st.outside = v and 1 or 0; touched() end
+    tip("Off: a chord only changes into one whose notes are in the scale -\n" ..
+        "in C major, G7 can become G9 or G13, C can become Cmaj7 or C6.\n" ..
+        "On: it may borrow notes from outside - C can become Cmin or Caug,\n" ..
+        "G7 can become G7b9, Amin can become Adim.")
   end
 
   label("Feel")

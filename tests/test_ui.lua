@@ -264,7 +264,9 @@ eq(g.headings[2], "Scale", "the second is the scale")
 ok(has(g.texts, "\"Noir\"   8 bars of 4/4, 28 notes, D Minor (Natural)"), "the source described")
 ok(has(g.texts, "Variation 1 of 4"), "four variations previewed")
 ok(has(g.texts, "subtle - about 2 changes in 28 notes"), "the amount said in words and changes")
-ok(not has(g.buttons, "Chords"), "no Chords switch for a melody: no dead controls")
+ok(not has(g.buttons, "Chord voicing") and not has(g.buttons, "Chord quality"),
+   "no chord switches for a melody: no dead controls")
+ok(not has(g.checkboxes, "Chord changes may leave the scale"), "nor the box to leave the scale")
 ok(has(g.buttons, "Notes") and has(g.buttons, "Rhythm"), "the other switches are there")
 ok(not has(g.buttons, "Put back the original"), "nothing to put back in an original")
 checkInk("melody")
@@ -374,7 +376,17 @@ P.ext = {}
 project("piano", "Piano")
 start()
 frame()
-ok(has(g.buttons, "Chords"), "a piano part gets the Chords switch")
+ok(has(g.buttons, "Chord voicing") and has(g.buttons, "Chord quality"), "a piano part gets the chord switches")
+ok(has(g.checkboxes, "Chord changes may leave the scale"), "and, with Chord quality on, the box to leave the scale")
+click("Chord quality")
+ok(not has(g.checkboxes, "Chord changes may leave the scale"), "Chord quality off: the box goes, no dead controls")
+click("Chord quality")
+toggle("Chord changes may leave the scale")
+atexitFn()
+ok(P.ext["MidiVariator:state"]:find("outside=1"), "leaving the scale is remembered")
+P.ext = {}
+start()
+frame()
 checkInk("piano")
 
 project("drums", "Beat", 8)
@@ -627,8 +639,8 @@ for _, state in ipairs(STATES) do
     end
   end
 end
-for _, name in ipairs({ "Use selected items", "Notes", "Rhythm", "Add notes", "Leave notes out", "Chords",
-                        "Timing", "Velocity", "Lengths", "Anywhere", "Towards the end", "Towards the start",
+for _, name in ipairs({ "Use selected items", "Notes", "Rhythm", "Add notes", "Leave notes out",
+                        "Chord voicing", "Chord quality", "Timing", "Velocity", "Lengths", "Anywhere", "Towards the end", "Towards the start",
                         "<", ">", "New set", "Make 4 variations", "Vary selected in place",
                         "Put back the original", "Stay in the original's notes", "Back to what it heard",
                         "Db", "B", "Major", "Minor Pentatonic", "Diminished Half-Whole" }) do

@@ -82,7 +82,8 @@ M.KINDS = {
   { key = "rhythm",  name = "Rhythm",          moves = { { "split", 1.5 }, { "shift", 1.5 }, { "join", 1 } } },
   { key = "add",     name = "Add notes",       moves = { { "passing", 2 }, { "grace", 1 }, { "pickup", 1 }, { "fill", 2 }, { "ghost", 2 } } },
   { key = "remove",  name = "Leave notes out", moves = { { "drop", 2 }, { "thin", 2 } } },
-  { key = "chords",  name = "Chords",          moves = { { "revoice", 2 }, { "roll", 1 }, { "colour", 1 } } },
+  { key = "chords",  name = "Chord voicing",   moves = { { "revoice", 2 }, { "roll", 1 } } },
+  { key = "quality", name = "Chord quality",   moves = { { "quality", 4 }, { "colour", 1 } } },
 }
 M.FEELS = {
   { key = "timing",   name = "Timing" },
@@ -93,7 +94,8 @@ M.FOCUS = { "Anywhere", "Towards the end", "Towards the start" }
 
 -- The options a caller starts from. Every kind and feel is on.
 function M.defaults()
-  local o = { amount = 0.35, focus = 1, keepEnds = true, grow = false }
+  -- outside: chord-quality changes may use notes outside the scale.
+  local o = { amount = 0.35, focus = 1, keepEnds = true, grow = false, outside = false }
   for _, k in ipairs(M.KINDS) do o[k.key] = true end
   for _, f in ipairs(M.FEELS) do o[f.key] = true end
   return o
@@ -278,6 +280,10 @@ function M.analyse(src, T, pick)
   elseif pick and pick.root and T then
     local sc = M.pickedScale(T, pick.root, pick.scale)
     an.scale, an.key, an.picked = sc.pcs, sc, sc
+    -- Chords are named by mv_theory's reader, which needs one of its own
+    -- keys: the picked one where it has it (C minor names Eb, not D#).
+    local seven = T.scaleIndex(M.SCALES[pick.scale].name)
+    if seven then an.chordKey = T.key(pick.root, seven) end
     -- The original's own notes stay allowed. After a pivot they are all
     -- in the scale anyway; without one, they are what it still plays.
     an.pcs = {}
@@ -285,6 +291,7 @@ function M.analyse(src, T, pick)
     for pc in pairs(played) do an.pcs[pc] = true end
   end
 
+  an.chordKey = an.chordKey or an.heardKey
   an.grid = M.grid(notes)
   an.unit = math.min(an.grid, M.MAX_UNIT)
   an.drums = an.hi < an.lo
@@ -1022,6 +1029,269 @@ function MOVES.colour(v)
   o.n.pitch = o.q
   v.touched[e] = true
   return ("%s: chord coloured, %s to %s"):format(at(v, e.start), nameOf(v, was), nameOf(v, o.q))
+end
+
+--[[  Changing a chord's quality: one small step to a neighbouring chord.
+
+      The chord is read by ScaleView Pro's chord reader (mv_theory.nameChord),
+      which gives its root. Each rule says which intervals above the root
+      must be there (`needs`) and must not (`lacks`), and then does one
+      thing - or, for the eleventh, two:
+
+        add   a new chord tone (C -> C7, Cmaj7, C6, Cadd9; C7 -> C9, C13, C7b9)
+        move  a chord tone a semitone or a tone (sus, minor <-> major,
+              Cmin -> Cdim, C -> Caug, Cmin7b5 -> Cdim7)
+        drop  a chord tone (C7 -> C)
+
+      Every note a rule would add must be in the scale unless the
+      "Chord changes may leave the scale" box is ticked (opts.outside).
+      The bass is never moved or dropped, and a dropped note is never the
+      top one, so the chord keeps its footing and its outline. ]]
+M.QUALITY_RULES = {
+  { needs = { 0, 4, 7 }, lacks = { 9, 10, 11 }, add = 10 },              -- C -> C7
+  { needs = { 0, 3, 7 }, lacks = { 9, 10, 11 }, add = 10 },              -- Cmin -> Cmin7
+  { needs = { 0, 4, 7 }, lacks = { 9, 10, 11 }, add = 11 },              -- C -> Cmaj7
+  { needs = { 0, 4, 7 }, lacks = { 9, 10, 11 }, add = 9 },               -- C -> C6
+  { needs = { 0, 3, 7 }, lacks = { 9, 10, 11 }, add = 9 },               -- Cmin -> Cmin6
+  { needs = { 0, 4, 7 }, lacks = { 1, 2, 3 }, add = 2 },                 -- Cadd9, C9, Cmaj9
+  { needs = { 0, 3, 7, 10 }, lacks = { 1, 2 }, add = 2 },                -- Cmin7 -> Cmin9
+  { needs = { 0, 3, 10 }, lacks = { 4, 5 }, add = 5 },                   -- Cmin7 -> Cmin11
+  { needs = { 0, 4, 10 }, lacks = { 8, 9 }, add = 9 },                   -- C7 -> C13
+  { needs = { 0, 4, 10 }, lacks = { 1, 2, 3 }, add = 1, rub = true },    -- C7 -> C7b9
+  { needs = { 0, 4, 7, 10 }, lacks = { 2, 5 }, move = { 4, 5 }, add = 2 }, -- C7 -> C11
+  { needs = { 0, 4, 7 }, lacks = { 5 }, move = { 4, 5 } },               -- C -> Csus4, C7 -> C7sus4
+  { needs = { 0, 3, 7 }, lacks = { 5 }, move = { 3, 5 } },               -- Cmin -> Csus4
+  { needs = { 0, 4, 7 }, lacks = { 2 }, move = { 4, 2 } },               -- C -> Csus2
+  { needs = { 0, 3, 7 }, lacks = { 2 }, move = { 3, 2 } },               -- Cmin -> Csus2
+  { needs = { 0, 5, 7 }, lacks = { 3, 4 }, move = { 5, 4 } },            -- Csus4 -> C
+  { needs = { 0, 5, 7 }, lacks = { 3, 4 }, move = { 5, 3 } },            -- Csus4 -> Cmin
+  { needs = { 0, 2, 7 }, lacks = { 3, 4 }, move = { 2, 4 } },            -- Csus2 -> C
+  { needs = { 0, 2, 7 }, lacks = { 3, 4 }, move = { 2, 3 } },            -- Csus2 -> Cmin
+  { needs = { 0, 4, 7 }, lacks = { 3 }, move = { 4, 3 } },              -- C -> Cmin
+  { needs = { 0, 3, 7 }, lacks = { 4 }, move = { 3, 4 } },               -- Cmin -> C
+  { needs = { 0, 3, 7 }, lacks = { 6, 11 }, move = { 7, 6 } },           -- Cmin -> Cdim, Cmin7 -> Cmin7b5
+  { needs = { 0, 4, 7 }, lacks = { 8, 9, 10 }, move = { 7, 8 } },        -- C -> Caug
+  { needs = { 0, 3, 6 }, lacks = { 9, 10, 11 }, add = 9 },               -- Cdim -> Cdim7
+  { needs = { 0, 3, 6 }, lacks = { 9, 10, 11 }, add = 10 },              -- Cdim -> Cmin7b5
+  { needs = { 0, 3, 6, 10 }, lacks = { 9 }, move = { 10, 9 } },          -- Cmin7b5 -> Cdim7
+  { needs = { 0, 3, 6, 9 }, lacks = { 10 }, move = { 9, 10 } },          -- Cdim7 -> Cmin7b5
+  { needs = { 0, 4, 10 }, lacks = {}, drop = 10 },                       -- C7 -> C
+  { needs = { 0, 3, 10 }, lacks = {}, drop = 10 },                       -- Cmin7 -> Cmin
+  { needs = { 0, 4, 11 }, lacks = {}, drop = 11 },                       -- Cmaj7 -> C
+}
+
+local function pitchesOf(e)
+  local out = {}
+  for _, n in ipairs(e.notes) do if not n.gone and not isDrum(n) then out[#out + 1] = n.pitch end end
+  table.sort(out)
+  return out
+end
+
+-- The same chord struck again and again (a strummed bar) is one chord: it
+-- changes as one, or one strike in four would sound like a wrong note.
+local function chordRun(v, e)
+  local key = table.concat(pitchesOf(e), ",")
+  local run = { e }
+  for dir = -1, 1, 2 do
+    local i = e.index + dir
+    while v.an.events[i] do
+      local o = v.an.events[i]
+      if v.touched[o] or protected(v, o) or table.concat(pitchesOf(o), ",") ~= key then break end
+      if dir < 0 then table.insert(run, 1, o) else run[#run + 1] = o end
+      i = i + dir
+    end
+  end
+  return run
+end
+
+-- Is `q` a pitch the chord can take? Not already there, and - unless the
+-- rule is the b9, whose rub is the point - no semitone against a chord note.
+local function fits(q, pitches, rub)
+  for _, x in ipairs(pitches) do
+    if x == q then return false end
+    if not rub and math.abs(x - q) == 1 then return false end
+  end
+  return q >= 0 and q <= 127
+end
+
+--[[  How `rule` changes the chord `pitches` (low to high) on `root`: a map
+      of old pitch -> new pitch, pitches to add, pitches to drop - or nil if
+      it cannot be done without moving the bass or the outline. ]]
+local function plan(rule, pitches, root, blockChord)
+  local bass, top = pitches[1], pitches[#pitches]
+  local moves, adds, drops = {}, {}, {}
+  local now = {}
+  for i, p in ipairs(pitches) do now[i] = p end
+
+  if rule.move then
+    local f, t = rule.move[1], rule.move[2]
+    local d = ((t - f + 6) % 12) - 6
+    local any = false
+    for i, p in ipairs(pitches) do
+      if (p - root) % 12 == f then
+        if i == 1 then return nil end            -- the bass stays
+        moves[p] = p + d
+        now[i] = p + d
+        any = true
+      end
+    end
+    if not any then return nil end
+  end
+
+  if rule.drop then
+    for i, p in ipairs(pitches) do
+      if (p - root) % 12 == rule.drop then
+        if i == 1 or i == #pitches then return nil end   -- bass and top stay
+        drops[p] = true
+      end
+    end
+    if #pitches - (function() local k = 0; for _ in pairs(drops) do k = k + 1 end; return k end)() < 3 then
+      return nil
+    end
+  end
+
+  if rule.add then
+    local pc = (root + rule.add) % 12
+    local others = {}
+    for _, p in ipairs(now) do if not drops[p] then others[#others + 1] = p end end
+    local place
+    -- Inside the chord, as high as it will go: an added ninth or seventh
+    -- belongs near the top, where a low one would muddy the bass.
+    for q = top - 1, bass + 1, -1 do
+      if q % 12 == pc and fits(q, others, rule.rub) then place = q; break end
+    end
+    -- Or a doubled inner note becomes the new one - the doubled root of a
+    -- triad is the note a seventh classically replaces.
+    if not place then
+      local count = {}
+      for _, p in ipairs(others) do count[p % 12] = (count[p % 12] or 0) + 1 end
+      for i = 2, #pitches - 1 do
+        local p = pitches[i]
+        if not moves[p] and count[p % 12] > 1 then
+          for d = -6, 6 do
+            local q = p + d
+            local rest = {}
+            for _, x in ipairs(others) do if x ~= p then rest[#rest + 1] = x end end
+            if q % 12 == pc and q > bass and q < top and fits(q, rest, rule.rub) then
+              moves[p], place = q, nil
+              return { moves = moves, adds = adds, drops = drops }
+            end
+          end
+        end
+      end
+    end
+    -- Or, for a block chord with no tune on top of it, just above the top.
+    if not place and blockChord then
+      for q = top + 1, top + 12 do
+        if q % 12 == pc and fits(q, others, rule.rub) then place = q; break end
+      end
+    end
+    if not place then return nil end
+    adds[#adds + 1] = place
+  end
+  return { moves = moves, adds = adds, drops = drops }
+end
+
+-- A block chord: every note struck together and held alike, so the top note
+-- is part of the chord, not a tune riding on it.
+local function isBlock(e)
+  local s, l = e.notes[1].start, e.notes[1].len
+  for _, n in ipairs(e.notes) do
+    if math.abs(n.start - s) > M.ONSET or math.abs(n.len - l) > 0.05 then return false end
+  end
+  return true
+end
+
+function MOVES.quality(v)
+  if not v.T or not v.an.chordKey then return nil end
+  local e = pickEvent(v, isChord)
+  if not e then return nil end
+  local pitches = pitchesOf(e)
+  local before, root = v.T.nameChord(pitches, v.an.chordKey)
+  if not root then return nil end
+  local has = {}
+  for _, p in ipairs(pitches) do has[(p - root) % 12] = true end
+
+  local rules = {}
+  for _, rule in ipairs(M.QUALITY_RULES) do
+    local ok = true
+    for _, iv in ipairs(rule.needs) do if not has[iv] then ok = false end end
+    for _, iv in ipairs(rule.lacks) do if has[iv] then ok = false end end
+    if ok and not v.opts.outside then
+      local new = {}
+      if rule.add then new[#new + 1] = rule.add end
+      if rule.move then new[#new + 1] = rule.move[2] end
+      for _, iv in ipairs(new) do
+        if not v.an.pcs[(root + iv) % 12] then ok = false end
+      end
+    end
+    if ok then rules[#rules + 1] = rule end
+  end
+
+  local run = chordRun(v, e)
+  local span0, span1 = math.huge, -math.huge
+  for _, ev in ipairs(run) do
+    for _, n in ipairs(ev.notes) do
+      span0, span1 = math.min(span0, n.start), math.max(span1, noteEnd(n))
+    end
+  end
+  local inRun = {}
+  for _, ev in ipairs(run) do for _, n in ipairs(ev.notes) do inRun[n] = true end end
+
+  -- Nothing it adds or moves may grind against the tune or anything else
+  -- sounding over the chord.
+  local function outsideClash(q)
+    for _, o in ipairs(v.notes) do
+      if not inRun[o] and not o.gone and not isDrum(o)
+         and o.start < span1 - 1e-6 and noteEnd(o) > span0 + 1e-6
+         and (harsh(q, o.pitch) or q == o.pitch) then
+        return true
+      end
+    end
+    return false
+  end
+
+  while #rules > 0 do
+    local rule, i = choose(v.r, rules)
+    table.remove(rules, i)
+    local p = plan(rule, pitches, root, isBlock(e))
+    local ok = p ~= nil
+    if ok then
+      for _, q in pairs(p.moves) do if outsideClash(q) then ok = false end end
+      for _, q in ipairs(p.adds) do if outsideClash(q) then ok = false end end
+    end
+    if ok then
+      local after = {}
+      for _, x in ipairs(pitches) do
+        if not p.drops[x] then after[#after + 1] = p.moves[x] or x end
+      end
+      for _, q in ipairs(p.adds) do after[#after + 1] = q end
+      table.sort(after)
+      local name = v.T.nameChord(after, v.an.chordKey)
+      if name ~= before then
+        for _, ev in ipairs(run) do
+          local vel, lens = 0, {}
+          for _, n in ipairs(ev.notes) do
+            if p.drops[n.pitch] then n.gone = true
+            elseif p.moves[n.pitch] then n.pitch = p.moves[n.pitch] end
+            vel = vel + n.vel
+            lens[#lens + 1] = n.len
+          end
+          table.sort(lens)
+          for _, q in ipairs(p.adds) do
+            local an = copyNote(ev.bass)
+            an.pitch, an.len = q, lens[(#lens + 1) // 2]
+            an.vel = math.floor(vel / #ev.notes * 0.85 + 0.5)
+            add(v, an)
+          end
+          v.touched[ev] = true
+        end
+        local times = #run > 1 and (", all %d times it is struck"):format(#run) or ""
+        return ("%s: %s became %s%s"):format(at(v, e.start), before, name, times)
+      end
+    end
+  end
+  return nil
 end
 
 M.MOVES = MOVES

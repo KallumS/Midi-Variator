@@ -54,14 +54,16 @@ local function fingerprint(notes)
   return table.concat(out, " ")
 end
 
-local function harshTime(notes)
+local function harshTime(notes, betweenMomentsOnly)
   -- Time two notes a semitone (or major seventh, minor ninth) apart sound
-  -- together, ignoring overlaps too short to hear as a clash.
+  -- together, ignoring overlaps too short to hear as a clash. With
+  -- betweenMomentsOnly, two notes struck together in one chord do not count.
   local t = 0
   for i = 1, #notes do
     for j = i + 1, #notes do
       local a, b = notes[i], notes[j]
-      if (a.chan or 0) ~= 9 and (b.chan or 0) ~= 9 then
+      local together = betweenMomentsOnly and math.abs(a.start - b.start) < 0.13
+      if (a.chan or 0) ~= 9 and (b.chan or 0) ~= 9 and not together then
         local d = math.abs(a.pitch - b.pitch) % 12
         if d == 1 or d == 11 then
           local o = math.min(a.start + a.len, b.start + b.len) - math.max(a.start, b.start)
@@ -188,7 +190,12 @@ for _, name in ipairs(NAMES) do
       end
       if not ok(not bad, tag .. ": " .. tostring(bad)) then break end
 
-      if not ok(harshTime(var.notes) <= origHarsh + 1.01,
+      -- A changed chord quality brings its own colour - Cmaj7's B against
+      -- its C is the point - so there the test is that the chord grinds
+      -- against nothing else (below). Everywhere else: nothing new grinds.
+      local qualityChanged = false
+      for _, c in ipairs(var.moves) do if c.kind == "quality" then qualityChanged = true end end
+      if not ok(harshTime(var.notes, qualityChanged) <= origHarsh + 1.01,
                 tag .. ": no new grinding clash longer than a beat") then break end
 
       -- Keeps the first and the last: the notes struck there are still
@@ -587,6 +594,136 @@ do
       end
     end
   end
+end
+
+------------------------------------------------------------------------------
+-- Changing a chord's quality
+------------------------------------------------------------------------------
+
+-- The chord reader is ScaleView Pro's, copied unchanged: some of the names
+-- ScaleView Pro's own tests assert.
+do
+  local C4 = 60
+  for _, case in ipairs({
+    { { C4, C4 + 4, C4 + 7, C4 + 10 }, "C7" }, { { C4, C4 + 4, C4 + 7, C4 + 11 }, "Cmaj7" },
+    { { C4, C4 + 3, C4 + 6, C4 + 9 }, "Cdim7" }, { { C4, C4 + 3, C4 + 6, C4 + 10 }, "Cmin7b5" },
+    { { C4, C4 + 2, C4 + 4, C4 + 7, C4 + 10 }, "C9" }, { { C4, C4 + 5, C4 + 7 }, "Csus4" },
+    { { 52, 55, C4, 71 }, "Cmaj7/E" }, { { 45, C4, 64, 67 }, "Amin7" },
+  }) do
+    eq((T.nameChord(case[1])), case[2], "ScaleView Pro names " .. case[2])
+  end
+end
+
+local function qualityOnly(outside)
+  local o = only("quality")
+  o.outside = outside
+  return o
+end
+
+local function block(pitches, bars)
+  local out = {}
+  for b = 0, (bars or 1) - 1 do
+    for _, p in ipairs(pitches) do out[#out + 1] = { pitch = p, start = b * 4, len = 4, vel = 100 } end
+  end
+  return out
+end
+
+-- G7 in C major (the bars around it make the key C): what it may become.
+do
+  local notes = block({ 48, 52, 55, 60 })                                    -- C
+  for _, n in ipairs(block({ 43, 59, 62, 65 })) do n.start = n.start + 4; notes[#notes + 1] = n end  -- G7
+  for _, n in ipairs(block({ 48, 52, 55, 60 })) do n.start = n.start + 8; notes[#notes + 1] = n end  -- C
+  local src = source(notes)
+  local an = V.analyse(src, T)
+  local seenIn, seenOut = {}, {}
+  for seed = 1, 150 do
+    for _, c in ipairs(V.vary(src, an, qualityOnly(false), seed, T).moves) do
+      if c.move == "quality" then seenIn[c.text:match("became (%S+)")] = true end
+    end
+    for _, c in ipairs(V.vary(src, an, qualityOnly(true), seed, T).moves) do
+      if c.move == "quality" then seenOut[c.text:match("became (%S+)")] = true end
+    end
+  end
+  local function list(t) local o = {}; for k in pairs(t) do o[#o + 1] = k end; table.sort(o); return table.concat(o, " ") end
+  -- ScaleView Pro's names: a seventh plus a thirteenth is "G7(13)". The
+  -- seventh is this voicing's top note, so it is never dropped.
+  ok(seenIn.G9 and seenIn["G7(13)"] and seenIn.G11 and seenIn.G7sus4,
+     "in the scale, G7 becomes G9, G7(13), G11 or G7sus4: " .. list(seenIn))
+  ok(not seenIn.G, "never G here: its seventh is the top note, and the outline stays")
+  ok(not seenIn.G7b9 and not seenIn.Gmin7, "but never G7b9 or Gmin7, whose notes are outside C major")
+  ok(seenOut.G7b9, "allowed out of the scale, G7 can become G7b9 - the diminished sound: " .. list(seenOut))
+end
+
+-- Every chord fixture, quality alone: the bass never moves, the chord's
+-- change grinds against nothing else, and, in the scale, no note leaves it.
+for _, name in ipairs({ "popChords", "strummed", "walking", "piano", "arpeggios" }) do
+  local src = source(F[name])
+  local an = V.analyse(src, T)
+  local origHarsh = harshTime(src.notes, true)
+  for _, outside in ipairs({ false, true }) do
+    for seed = 1, 40 do
+      local tag = ("%s, chord quality%s, seed %d"):format(name, outside and " (may leave the scale)" or "", seed)
+      local var = V.vary(src, an, qualityOnly(outside), seed, T)
+      local lowest = {}
+      for _, n in ipairs(var.notes) do
+        local k = math.floor(n.start * 8 + 0.5)
+        lowest[k] = math.min(lowest[k] or 999, n.pitch)
+      end
+      local moved
+      for _, e in ipairs(an.events) do
+        local k = math.floor(e.start * 8 + 0.5)
+        if lowest[k] and lowest[k] ~= e.bass.pitch then moved = e.bass.pitch .. "->" .. lowest[k] end
+      end
+      if not ok(not moved, tag .. ": the bass stays (" .. tostring(moved) .. ")") then break end
+      if not ok(harshTime(var.notes, true) <= origHarsh + 0.26, tag .. ": the new chord grinds against nothing else") then break end
+      if not outside then
+        local bad
+        for _, n in ipairs(var.notes) do if not an.pcs[n.pitch % 12] then bad = n.pitch end end
+        if not ok(not bad, tag .. ": every note in the scale") then break end
+      end
+    end
+  end
+end
+
+-- A chord struck again and again changes every time it is struck.
+do
+  local src = source(F.strummed)
+  local an = V.analyse(src, T)
+  local checked = 0
+  for seed = 1, 60 do
+    local var = V.vary(src, an, qualityOnly(false), seed, T)
+    for _, c in ipairs(var.moves) do
+      local times = c.text:match("all (%d+) times")
+      if c.move == "quality" and times then
+        -- Every moment's notes, as a set; the chosen strike's new chord must
+        -- be held by at least that many strikes.
+        local at = {}
+        for _, n in ipairs(var.notes) do
+          local k = math.floor(n.start * 4 + 0.5)
+          at[k] = at[k] or {}
+          table.insert(at[k], n.pitch)
+        end
+        local function set(k) local t = at[k] or {}; table.sort(t); return table.concat(t, ",") end
+        local target = set(math.floor(c.at * 4 + 0.5))
+        local count = 0
+        for k in pairs(at) do if set(k) == target then count = count + 1 end end
+        ok(count >= tonumber(times), ("a repeated chord changes all %s times (%d)"):format(times, count))
+        checked = checked + 1
+      end
+    end
+  end
+  ok(checked > 0, "and the strummed fixture has repeated chords changed")
+end
+
+-- Nothing to change: melodies and drums get no chord-quality change.
+for _, name in ipairs({ "twinkle", "noir", "drums", "run" }) do
+  local src = source(F[name])
+  local an = V.analyse(src, T)
+  local any = false
+  for seed = 1, 20 do
+    if #V.vary(src, an, qualityOnly(true), seed, T).moves > 0 then any = true end
+  end
+  ok(not any, name .. ": no chords, no chord-quality change")
 end
 
 C.done()
