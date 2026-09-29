@@ -118,7 +118,12 @@ vary and its analysis. `pick` is nil (heard, as above), `{ own = true }`
   last argument is noSort - true for each, one `MIDI_Sort`.
 - `tests/reaper_mock.lua` is written **from the documented signatures**,
   and raises on any function it does not have. Add a function to it from
-  the docs when the scripts start using one.
+  the docs when the scripts start using one. Like REAPER, it **refuses a
+  deleted item or take** in any call but `ValidatePtr2`.
+- **Never hold an item across a call that can replace it.** Varying in
+  place and putting back can delete items (pooled, file, looped); anything
+  listed before must be listed again after. 1.1 held the selection across
+  *Vary selected in place* and REAPER raised "MediaItem expected".
 - **Variations are new items** (`CreateNewMIDIItemInProj`), never copies of
   the original ([0002](docs/decisions/0002-variations-are-new-items.md)): a
   copy can share the original's MIDI (pooled, or a `.mid` on disk).
@@ -174,6 +179,7 @@ load; the test loads nonsense to prove it.
 | --- | --- |
 | 1.0 | First version. On `claude/dreamy-maxwell-9q4hfh`, in the index, **not yet merged** and **not yet run in REAPER** - the window has only been driven by the mocked ReaImGui. |
 | 1.1 | The Scale step: a root and scale picker (ScaleView's scales), the pivot, *Stay in the original's notes*, and the step limit. Same branch, same caveats. |
+| 1.1.1 | Fix: *Vary selected in place* on pooled, file or looped items raised "MediaItem expected". **Found by the user running it in REAPER** - the first real run; everything else "seems to be working well". |
 
 **Known limits, all deliberate for now:**
 

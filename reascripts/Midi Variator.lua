@@ -15,7 +15,7 @@
  *                 Needs ReaImGui, from the ReaTeam Extensions repository.
  * Author:         Kallum Shah
  * Links:          https://github.com/KallumS/Midi-Variator
- * Version:        1.1
+ * Version:        1.1.1
  * Provides:
  *   mv_theory.lua
  *   mv_vary.lua
@@ -303,16 +303,17 @@ local function varySelected()
   end)
   newSeed()
   if result ~= Place.OK then say("Select the MIDI items to vary first.", true); return end
-  say(("Varied %s in place, each from its own original."):format(plural(count, "item")))
+  -- Re-read replaced sources first: reading clears the status line.
   if not sourcesAlive() then load(true) end
+  say(("Varied %s in place, each from its own original."):format(plural(count, "item")))
   ui.dirty = true
 end
 
 local function restoreSelected()
   local result, count = Place.restore(Place.selectedItems())
   if result ~= Place.OK then say("None of the selected items is a variation.", true); return end
-  say(("Put the original back in %s."):format(plural(count, "item")))
   if not sourcesAlive() then load(true) end
+  say(("Put the original back in %s."):format(plural(count, "item")))
 end
 
 ------------------------------------------------------------------------------
@@ -683,7 +684,12 @@ local function drawVariations()
   local selected = Place.selectedItems()
   if #selected > 0 then
     ImGui.SameLine(ctx)
-    if pick("Vary selected in place", false, 190) then varySelected() end
+    if pick("Vary selected in place", false, 190) then
+      varySelected()
+      -- Varying can replace items (pooled copies, .mid files, loops), and
+      -- REAPER refuses a deleted one: read the selection again.
+      selected = Place.selectedItems()
+    end
     tip("Gives every selected MIDI item a new variation of its own original,\n" ..
         "where it is. Select a row of copies of a phrase and press this to\n" ..
         "vary them all. One undo step.")
@@ -694,7 +700,7 @@ local function drawVariations()
     end
     if anyVariation then
       ImGui.SameLine(ctx)
-      if pick("Put back the original", false, 180) then restoreSelected() end
+      if pick("Put back the original", false, 180) then restoreSelected() end   -- the last use of `selected`
       tip("Every selected variation plays its original again. It stays a\n" ..
           "variation, so it can be varied again later.")
     end

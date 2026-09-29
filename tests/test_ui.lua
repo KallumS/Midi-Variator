@@ -421,6 +421,39 @@ do
 end
 
 ------------------------------------------------------------------------------
+-- Varying in place items that have to be replaced
+--
+-- Pasted copies are often pooled, and an imported .mid can be played from
+-- disk: those are replaced by new items, not rewritten (decision 0005).
+-- The window once kept its list of selected items from before the click
+-- and asked REAPER about the deleted ones - "bad argument #1 to
+-- 'GetSetMediaItemInfo_String' (MediaItem expected)" in REAPER itself.
+------------------------------------------------------------------------------
+
+do
+  P.reset()
+  P.ext = {}
+  local tr = P.track("Piano")
+  local copies = {
+    P.item(tr, 0, 16, F.twinkle, "Twinkle", { pooled = true }),
+    P.item(tr, 16, 16, F.twinkle, "Twinkle", { pooled = true }),
+    P.item(tr, 32, 16, F.twinkle, "Twinkle", { file = "/music/twinkle.mid" }),
+  }
+  P.selected = { copies[1], copies[2], copies[3] }
+  start()
+  frame()
+  click("Vary selected in place")
+  ok(has(g.texts, "Varied 3 items in place"), "pooled and file items are varied in place")
+  for i, it in ipairs(copies) do ok(not it.alive, ("copy %d was replaced"):format(i)) end
+  eq(#P.selected, 3, "by three new items, selected")
+  ok(has(g.buttons, "Put back the original"), "which can be put back")
+  click("Vary selected in place")
+  ok(has(g.texts, "Varied 3 items in place"), "and varied again")
+  click("Put back the original")
+  ok(has(g.texts, "Put the original back in 3 items."), "and put back")
+end
+
+------------------------------------------------------------------------------
 -- The scale: picking one, pivoting, and staying in the original's notes
 ------------------------------------------------------------------------------
 
