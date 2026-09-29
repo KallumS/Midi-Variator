@@ -88,6 +88,29 @@ Melody steps use `pcs`; chord colours use `scale`. The piano fixture (A
 minor ending on E major) is why: `detectKey` calls it E minor, whose F# is
 nowhere in it. **Do not "fix" this by retuning `mv_theory`** - it is a copy.
 
+### Picking a scale, pivoting, own notes ([0006](docs/decisions/0006-pick-a-scale-and-pivot.md))
+
+`V.prepare(src, T, pick)` is what the window calls; it returns the source to
+vary and its analysis. `pick` is nil (heard, as above), `{ own = true }`
+(`scale` and `pcs` are only the pitch classes the original plays), or
+`{ root, scale, fit }` - `root` indexes `T.ROOTS`, `scale` indexes
+`V.SCALES`, which is **ScaleView's SCALES table copied unchanged** from
+`ScaleView Pro.lua` at `e31a6e8` (with its letters, so C minor spells Eb).
+
+- **`fit` is the pivot**: `V.fit` moves each out-of-scale note to the
+  nearest scale note; a tie goes to the **same letter** (C minor into C
+  major: Eb -> E, not D), and two notes landing on one pitch become one.
+  Drums are never fitted. The returned source is a shallow copy with the
+  fitted notes - **its `original` is still the true one**, so what is kept
+  in a variation and what *Put back* restores never pivots.
+- Picked, `an.scale` is the picked scale and `an.pcs` adds the notes the
+  (fitted) original plays; `an.key` spells names in the picked scale;
+  `an.heardKey` is always what was heard.
+- **`M.MAX_STEP` (4)**: `step` never goes further than a major third, or a
+  pentatonic or a three-note motif's own notes would "step" a fifth.
+- Likeness in the window is measured against the true original, so a pivot
+  shows as the change it is.
+
 ## REAPER, from a script (`mv_place.lua`)
 
 - Every signature was checked in the API docs (attached to the first
@@ -120,8 +143,12 @@ every button wears the dark ink `#14171C`; the theme is popped outside the
 `visible` test; a switch that is on is the accent `#FFF200`. The roll draws
 **the original grey `#6D7581` and the variation yellow**.
 
-Three numbered steps - **1 Source, 2 What may change, 3 Variations** - and
-only step 1 until something is read. **No dead controls**: no Chords switch
+Four steps - **Source, Scale, What may change, Variations** - numbered by
+`heading` itself, so drums (which get no Scale step) number 1, 2, 3 with no
+gap. Only step 1 until something is read. **No dead controls**: no Scale
+step for drums, no picker while *Stay in the original's notes* is on, no
+*Back to what it heard* until something is picked, no *Bring the original
+into this scale* when every note is already in it, no Chords switch
 without chords, no Notes switch for drums, no arrows for one variation,
 *Vary selected in place* only with MIDI items selected, *Put back the
 original* only when a selected item is a variation.
@@ -131,18 +158,27 @@ exactly those notes. `test_ui` fixes the clock, works out the seed, makes
 the same series itself and compares note for note. A new seed is drawn
 after every Make and every Vary in place.
 
-Preferences are saved in one ExtState string and clamped on load; the test
-loads nonsense to prove it.
+The **picked scale belongs to the item**, like Midi Suggester's key: it is
+not saved, and reading a new source forgets it. Picking the heard key again
+clears the pick. With several sources, the key shown is the first one that
+has a key (drums have none), named. *Vary selected in place* uses the
+picked scale too.
+
+Preferences (including *Stay in the original's notes* and *Bring the
+original into this scale*) are saved in one ExtState string and clamped on
+load; the test loads nonsense to prove it.
 
 ## Where it stands
 
 | | |
 | --- | --- |
-| 1.0 | First version. On `claude/dreamy-maxwell-9q4hfh`, **not yet merged** and **not yet run in REAPER** - the window has only been driven by the mocked ReaImGui. |
+| 1.0 | First version. On `claude/dreamy-maxwell-9q4hfh`, in the index, **not yet merged** and **not yet run in REAPER** - the window has only been driven by the mocked ReaImGui. |
+| 1.1 | The Scale step: a root and scale picker (ScaleView's scales), the pivot, *Stay in the original's notes*, and the step limit. Same branch, same caveats. |
 
 **Known limits, all deliberate for now:**
 
-- One scale for the whole item: a piece that modulates is read in one.
+- One scale for the whole item: a piece that modulates is read in one, and
+  a picked scale applies to every selected item alike.
 - One time signature: `readItem` takes the meter at the item's start.
 - CC shapes (bezier curves) are not copied - imported MIDI has none; drawn
   curves come across as steps. Text and sysex events are not copied.
@@ -172,12 +208,15 @@ tools/test.sh
 
 | | |
 | --- | --- |
-| `test_vary.lua` | Every fixture at four amounts and forty seeds: small, in key, no new clashes, ends kept, playable. Each switch alone. Twenty in a row. The series memory. Encode/decode. |
+| `test_vary.lua` | Every fixture at four amounts and forty seeds: small, in key, no new clashes, ends kept, playable. Each switch alone. Twenty in a row. The series memory. Encode/decode. Spelling picked scales; the pivot both ways; every fixture into six scales, fitted and not; own notes; the step limit. |
 | `test_place.lua` | Reading (trim, loop, 6/8, mid-bar), making, numbering, placement, varying in place, pooled / file / looped items, putting back, refusals. |
-| `test_ui.lua` | The real script against a mocked ReaImGui: preview equals what is made, every button clicked from a fresh start in every state. |
+| `test_ui.lua` | The real script against a mocked ReaImGui: preview equals what is made; the Scale step (pivot made and put back, vary in place, own notes, drums); every button clicked from a fresh start in every state, including with a scale picked. |
 
 **Prove a test bites before believing it.** Every rule was broken on
 purpose and the suite watched to fail. That found four gaps, each now
 closed: the change cap was never reached (a two-note test now reaches it);
 the series memory was only half-tested; nothing wrote an item that starts
 mid-bar; and a refused batch was never tested with anything already made.
+The scale work found two more: the same-letter tie-break was only ever
+tested in the direction where "round down" gives the same answer (C major
+into C minor), and nothing varied in place with a scale picked.

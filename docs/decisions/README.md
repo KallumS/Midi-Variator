@@ -16,3 +16,4 @@ the standing rules; this holds the decisions behind them.
 | [0003](0003-always-from-the-original.md) | Every variation is made from the original, which it carries inside it |
 | [0004](0004-the-scale-is-the-seven-notes-used.md) | Notes move within the seven notes the music uses, not the detected key |
 | [0005](0005-rewrite-in-place-only-when-safe.md) | An item is rewritten in place only when nothing else shares its MIDI |
+| [0006](0006-pick-a-scale-and-pivot.md) | A picked scale pivots the original by nearest note, same letter on a tie |

@@ -439,4 +439,154 @@ do
   eq(V.likeness(F.twinkle, F.twinkle), 1, "a copy keeps everything")
 end
 
+------------------------------------------------------------------------------
+-- Picking a scale, pivoting, and staying in the original's notes
+------------------------------------------------------------------------------
+
+local function names(sc)
+  local out = {}
+  for pc = 0, 11 do if sc.pcs[pc] then out[#out + 1] = sc.names[pc] end end
+  return table.concat(out, " ")
+end
+local function picked(root, scale, fit)
+  return { root = T.rootIndex(root), scale = V.scaleIndex(scale), fit = fit }
+end
+
+do
+  eq(#V.SCALES, 16, "ScaleView's sixteen scales")
+  eq(names(V.pickedScale(T, T.rootIndex("C"), V.scaleIndex("Minor (Natural)"))), "C D Eb F G Ab Bb",
+     "C minor is spelled with flats")
+  eq(names(V.pickedScale(T, T.rootIndex("A"), V.scaleIndex("Minor Pentatonic"))), "C D E G A",
+     "A minor pentatonic")
+  eq(names(V.pickedScale(T, T.rootIndex("C"), V.scaleIndex("Major Blues"))), "C D Eb E G A",
+     "C major blues has its Eb and E")
+  eq(names(V.pickedScale(T, T.rootIndex("F#"), V.scaleIndex("Major"))), "C# D# E# F# G# A# B",
+     "F# major spells E#")
+  eq(V.pickedScale(T, T.rootIndex("D"), V.scaleIndex("Dorian")).label, "D Dorian", "labelled")
+
+  -- Pivoting Twinkle from C major to C minor: every E an Eb, every A an Ab.
+  local heard = V.analyse(source(F.twinkle), T).heardKey
+  local cm = V.pickedScale(T, T.rootIndex("C"), V.scaleIndex("Minor (Natural)"))
+  local notes, moved = V.fit(F.twinkle, cm, heard)
+  eq(V.describeFit(moved, heard, cm), "E -> Eb, A -> Ab", "C major into C minor: the third and sixth fall")
+  eq(#notes, #F.twinkle, "and no note is lost")
+  for i, n in ipairs(notes) do
+    ok(cm.pcs[n.pitch % 12], "every note is in C minor")
+    eq(n.start, F.twinkle[i].start, "none moves in time")
+  end
+  -- A tie is settled by the letter: E is as near F as Eb, but the third
+  -- stays a third.
+  ok(moved[1].to == 3, "E becomes Eb, not F")
+
+  -- And back: a C minor tune into C major. Eb is as near D as E; the letter
+  -- makes it E, so the minor third becomes the major third, not the second.
+  local minor = { { pitch = 60, start = 0, len = 1 }, { pitch = 63, start = 1, len = 1 },
+                  { pitch = 67, start = 2, len = 1 }, { pitch = 68, start = 3, len = 1 },
+                  { pitch = 70, start = 4, len = 1 }, { pitch = 72, start = 5, len = 3 } }
+  local heardMinor = V.analyse(source(minor), T).heardKey
+  eq(heardMinor.label, "C Minor (Natural)", "set up: heard in C minor")
+  local cmaj = V.pickedScale(T, T.rootIndex("C"), V.scaleIndex("Major"))
+  local _, movedUp = V.fit(minor, cmaj, heardMinor)
+  eq(V.describeFit(movedUp, heardMinor, cmaj), "Eb -> E, Ab -> A, Bb -> B",
+     "C minor into C major: each note rises to its own letter")
+
+  -- Into a pentatonic, the nearest note wins; two notes landing on one
+  -- pitch at once become one.
+  local cpent = V.pickedScale(T, T.rootIndex("C"), V.scaleIndex("Minor Pentatonic"))
+  local chord = { { pitch = 62, start = 0, len = 2, vel = 100, chan = 0 },
+                  { pitch = 63, start = 0, len = 1, vel = 90, chan = 0 },
+                  { pitch = 67, start = 0, len = 2, vel = 100, chan = 0 } }
+  local out = V.fit(chord, cpent, heard)
+  eq(#out, 2, "D moves to Eb, which is already there: one Eb")
+  eq(out[1].len, 2, "held as long as the longer of the two")
+
+  -- Drums are never fitted.
+  local d = V.fit(F.drums, cm, nil)
+  eq(fingerprint(d), fingerprint(V.copyNotes(F.drums)), "drums are not moved into a scale")
+end
+
+-- Without a pick nothing changes; picking without fitting leaves the
+-- original as it is.
+do
+  local src = source(F.twinkle)
+  local same, an = V.prepare(src, T, nil)
+  ok(same == src, "nothing picked: the original itself")
+  eq(#an.fitted, 0, "and nothing fitted")
+  same = V.prepare(src, T, picked("C", "Minor (Natural)", false))
+  ok(same == src, "picked but not fitted: the original itself")
+  same = V.prepare(src, T, { own = true })
+  ok(same == src, "own notes: the original itself")
+  -- Picking what was heard fits nothing.
+  local back, an2 = V.prepare(src, T, picked("C", "Major", true))
+  eq(#an2.fitted, 0, "picking the key it was heard in moves nothing")
+  eq(fingerprint(back.notes), fingerprint(V.copyNotes(src.notes)), "so the notes are the original's")
+  -- A fitted copy keeps everything else of the source's.
+  src.original, src.item = { "the true original" }, "item"
+  local fitted = V.prepare(src, T, picked("C", "Minor (Natural)", true))
+  ok(fitted ~= src and fitted.original == src.original and fitted.item == "item",
+     "a pivoted copy still carries the TRUE original and item")
+  ok(src.notes == F.twinkle or fingerprint(src.notes) == fingerprint(F.twinkle), "and the source is untouched")
+end
+
+-- Every fixture, pivoted into several scales: every note of every
+-- variation in the picked scale. Unfitted: only the original's own notes
+-- may be outside it. Own notes: nothing the original does not play.
+do
+  local PICKS = {
+    { "C", "Minor (Natural)" }, { "D", "Dorian" }, { "A", "Minor Pentatonic" },
+    { "E", "Phrygian" }, { "C", "Whole Tone" }, { "G", "Major Blues" },
+  }
+  for _, name in ipairs(NAMES) do
+    local src = source(F[name])
+    local played = V.analyse(src, T).played
+    for _, pk in ipairs(PICKS) do
+      local sc = V.pickedScale(T, T.rootIndex(pk[1]), V.scaleIndex(pk[2]))
+      local work, an = V.prepare(src, T, picked(pk[1], pk[2], true))
+      local loose, anLoose = V.prepare(src, T, picked(pk[1], pk[2], false))
+      for seed = 1, 12 do
+        local tag = ("%s into %s %s, seed %d"):format(name, pk[1], pk[2], seed)
+        local var = V.vary(work, an, opts({ amount = 1 }), seed, T)
+        local bad
+        for _, n in ipairs(var.notes) do
+          if n.chan ~= 9 and not sc.pcs[n.pitch % 12] then bad = n.pitch end
+        end
+        if not ok(not bad, tag .. ": pivoted, every note in the scale (" .. tostring(bad) .. ")") then break end
+        var = V.vary(loose, anLoose, opts({ amount = 1 }), seed, T)
+        for _, n in ipairs(var.notes) do
+          if n.chan ~= 9 and not sc.pcs[n.pitch % 12] and not played[n.pitch % 12] then bad = n.pitch end
+        end
+        if not ok(not bad, tag .. ": not pivoted, nothing outside both scale and original") then break end
+      end
+    end
+    local own, anOwn = V.prepare(src, T, { own = true })
+    for seed = 1, 20 do
+      local var = V.vary(own, anOwn, opts({ amount = 1 }), seed, T)
+      local bad
+      for _, n in ipairs(var.notes) do
+        if n.chan ~= 9 and not played[n.pitch % 12] then bad = n.pitch end
+      end
+      if not ok(not bad, ("%s, own notes, seed %d: only notes the original plays"):format(name, seed)) then break end
+    end
+  end
+end
+
+-- A step stays a step, whatever the scale: never further than MAX_STEP,
+-- even in a pentatonic or with a three-note motif's own notes.
+do
+  local motif = { { pitch = 60, start = 0, len = 1, vel = 100 }, { pitch = 67, start = 1, len = 1, vel = 100 },
+                  { pitch = 72, start = 2, len = 1, vel = 100 }, { pitch = 67, start = 3, len = 1, vel = 100 },
+                  { pitch = 60, start = 4, len = 1, vel = 100 }, { pitch = 67, start = 5, len = 1, vel = 100 },
+                  { pitch = 72, start = 6, len = 1, vel = 100 }, { pitch = 60, start = 7, len = 1, vel = 100 } }
+  for _, pk in ipairs({ { own = true }, picked("C", "Minor Pentatonic", true), picked("C", "Major", true) }) do
+    local work, an = V.prepare(source(motif), T, pk)
+    for seed = 1, 40 do
+      local var = V.vary(work, an, only("notes"), seed, T)
+      for i, n in ipairs(var.notes) do
+        local d = math.abs(n.pitch - work.notes[i].pitch)
+        if not ok(d <= V.MAX_STEP or d == 12, "a step is never more than a major third (" .. d .. ")") then break end
+      end
+    end
+  end
+end
+
 C.done()
