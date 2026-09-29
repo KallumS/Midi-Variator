@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ReaPack index for Midi Variator.
+
+  Add this repository in REAPER with Extensions > ReaPack > Import repositories,
+  pasting the raw URL of this file on the default branch:
+
+    https://raw.githubusercontent.com/KallumS/Midi-Variator/main/index.xml
+
+  That URL only resolves once this file is on the default branch.
+
+  Each <source> is pinned to a commit rather than a branch, so an installed
+  version is the exact set of files that was tested and cannot change
+  underneath anyone. Publishing a new version means adding a <version> block
+  with a fresh commit hash - never editing an existing one.
+
+  The four files are one package and install into one folder, because the
+  main script loads the other three from beside itself.
+
+  ReaPack keys an installed package by its NAME, so renaming the script is
+  not an upgrade. Rename sparingly.
+-->
+<index version="1" name="Midi Variator">
+  <category name="MIDI Editor">
+
+    <reapack name="Midi Variator.lua" type="script" desc="Midi Variator">
+      <version name="1.0" author="kallums" time="2026-09-29T20:00:00Z">
+        <changelog><![CDATA[First release. Makes small variations of a MIDI item - melodies, chords, piano parts or drums - each made from the original, so twenty in a row still sound like it. Choose how much may change and what (notes, rhythm, added or left-out notes, chords, timing, velocity, lengths) and where in the phrase; preview the batch against the original; make them after it on the same track. Every variation carries its original, so it can be varied again or put back. Needs ReaImGui.]]></changelog>
+        <source main="main" file="Midi Variator.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/f5c8b40c55ada0cc72aadfbfe901979ab08158ac/reascripts/Midi%20Variator.lua</source>
+        <source file="mv_theory.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/f5c8b40c55ada0cc72aadfbfe901979ab08158ac/reascripts/mv_theory.lua</source>
+        <source file="mv_vary.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/f5c8b40c55ada0cc72aadfbfe901979ab08158ac/reascripts/mv_vary.lua</source>
+        <source file="mv_place.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/f5c8b40c55ada0cc72aadfbfe901979ab08158ac/reascripts/mv_place.lua</source>
+      </version>
+    </reapack>
+
+  </category>
+</index>
