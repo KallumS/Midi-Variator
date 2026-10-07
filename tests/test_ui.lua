@@ -28,6 +28,7 @@ local g = {}
 local function resetFrame()
   g.idDepth, g.colDepth, g.colStack = 0, 0, {}
   g.buttons, g.ink, g.texts, g.checkboxes, g.headings, g.sliders = {}, {}, {}, {}, {}, {}
+  g.ticked = {}
   g.rects = {}
 end
 resetFrame()
@@ -87,6 +88,7 @@ end
 function ImGui.Checkbox(_, label, v)
   if type(v) ~= "boolean" then error("Checkbox value is a " .. type(v)) end
   g.checkboxes[#g.checkboxes + 1] = label
+  g.ticked[label] = v
   if g.toggle == label then return true, not v end
   return false, v
 end
@@ -406,6 +408,55 @@ ok(has(g.texts, "drums"), "drums are recognised")
 ok(not has(g.buttons, "Notes"), "and get no Notes switch: a drum has no pitch to bend")
 checkInk("drums")
 
+-- Unticking a change: a box for each, the preview and what is made both
+-- leave it out, and a new batch starts with every box ticked.
+do
+  P.ext = {}
+  local tr = project("noir", "Noir")
+  start()
+  frame()
+  local boxes = {}
+  for _, l in ipairs(g.checkboxes) do if l:find("##change", 1, true) then boxes[#boxes + 1] = l end end
+  ok(#boxes >= 2, "every change has a box (" .. #boxes .. ")")
+  for _, l in ipairs(boxes) do ok(g.ticked[l], "ticked to begin with") end
+  local label = boxes[1]
+  local id = tonumber(label:match("##change1%.(%d+)$"))
+  ok(id, "the box knows its change")
+  toggle(label)
+  ok(g.ticked[label] == false, "unticked, the box stays, unticked")
+  local seed = (1000 * 7 + 0 + 1 * 31) % 2147483000 + 1
+  local src = { notes = F.noir, lead = 0, beats = 32, barBeats = 4, pulse = 1 }
+  local o = V.defaults(); o.amount = 0.35
+  local an = V.analyse(src, T)
+  local with = V.series(src, an, o, seed, 4, T, 1, {})
+  local without = V.series(src, an, o, seed, 4, T, 1, {}, { [1] = { [id] = true } })
+  ok(notesOfList(with[1].notes) ~= notesOfList(without[1].notes), "set up: unticking changes the notes")
+  click("Make 4 variations")
+  eq(notesOfItem(tr.items[2]), notesOfList(without[1].notes), "what is made leaves the unticked change out")
+  eq(notesOfItem(tr.items[3]), notesOfList(with[2].notes), "and the other variations are as they were")
+  -- A setting changed: a new batch, every box ticked.
+  P.selected = { tr.items[1] }
+  click("Use selected items")
+  local first
+  for _, l in ipairs(g.checkboxes) do if l:find("##change", 1, true) then first = first or l end end
+  toggle(first)
+  slide("##amount", 50)
+  slide("##amount", 35)
+  local all = true
+  for _, l in ipairs(g.checkboxes) do if l:find("##change", 1, true) and not g.ticked[l] then all = false end end
+  ok(all, "after a setting changes, every box is ticked again")
+  -- Unticked in one variation, not in the next.
+  frame()
+  for _, l in ipairs(g.checkboxes) do if l:find("##change", 1, true) then first = l; break end end
+  toggle(first)
+  click(">")
+  local nextAll = true
+  for _, l in ipairs(g.checkboxes) do if l:find("##change", 1, true) and not g.ticked[l] then nextAll = false end end
+  ok(nextAll, "an unticked box belongs to its own variation")
+  click("<")
+  ok(g.ticked[first] == false, "and is still unticked coming back")
+end
+
 -- Develop: only near the top of the slider, never for drums, and what it
 -- previews at 100% is what it makes.
 do
@@ -442,7 +493,7 @@ do
     for _ = 1, 3 do
       for _ = 1, 4 do
         frame()
-        for _, t in ipairs(g.texts) do
+        for _, t in ipairs(g.checkboxes) do
           for _, w in ipairs(DEVELOPED) do if t:find(w, 1, true) then found = true end end
         end
         click(">")

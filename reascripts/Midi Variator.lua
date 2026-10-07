@@ -130,6 +130,7 @@ local ui = {
   runs = nil,        -- for each source, the batch of variations previewed
   show = 1,          -- which variation of the batch the roll shows
   histories = {},    -- per original, what earlier batches changed
+  skips = {},        -- skips[j][i]: the changes unticked in source j's i-th variation
   dirty = false, status = "", warn = false,
 }
 
@@ -158,6 +159,7 @@ end
 
 local function newSeed()
   ui.seed = (math.floor(os.time()) * 7 + math.floor(os.clock() * 1000) + ui.seed * 31) % 2147483000 + 1
+  ui.skips = {}      -- unticked changes belong to the variations they were in
 end
 
 local function options()
@@ -201,7 +203,7 @@ local function load(quiet)
     end
     return
   end
-  ui.srcs, ui.ans = srcs, {}
+  ui.srcs, ui.ans, ui.skips = srcs, {}, {}
   for j, src in ipairs(srcs) do ui.ans[j] = V.analyse(src, T) end
   -- A picked scale belongs to the music it was picked for, not to the user.
   ui.pick = nil
@@ -236,14 +238,16 @@ local function rebuild()
   local o, pk = options(), currentPick()
   for j, src in ipairs(ui.srcs) do
     ui.work[j], ui.prep[j] = V.prepare(src, T, pk)
-    ui.runs[j] = V.series(ui.work[j], ui.prep[j], o, ui.seed, st.count, T, j, copyOf(historyFor(src)))
+    ui.runs[j] = V.series(ui.work[j], ui.prep[j], o, ui.seed, st.count, T, j, copyOf(historyFor(src)),
+                          ui.skips[j])
     -- Measured against the true original, so a pivot shows as the change it is.
     for _, var in ipairs(ui.runs[j]) do var.like = V.likeness(src.notes, var.notes) end
   end
   if ui.show > st.count then ui.show = 1 end
 end
 
-local function touched() ui.dirty = true end
+-- A setting changed: a new batch, so nothing in it is unticked yet.
+local function touched() ui.dirty = true; ui.skips = {} end
 
 local function hasChords()
   for _, an in ipairs(ui.ans or {}) do
@@ -293,8 +297,10 @@ local function makeThem()
     local h = historyFor(src)
     for _, var in ipairs(ui.runs[j]) do
       for _, c in ipairs(var.moves) do
-        h["@" .. c.event] = (h["@" .. c.event] or 0) + 1
-        h[c.move .. "@" .. c.event] = (h[c.move .. "@" .. c.event] or 0) + 1
+        if not c.skipped then
+          h["@" .. c.event] = (h["@" .. c.event] or 0) + 1
+          h[c.move .. "@" .. c.event] = (h[c.move .. "@" .. c.event] or 0) + 1
+        end
       end
     end
   end
@@ -562,6 +568,8 @@ local function drawScale()
   end
 end
 
+local MAX_LINES = 10   -- changes listed for one variation
+
 local AMOUNT_WORDS = { { 0, "none - exact copies" }, { 1, "a whisper" }, { 21, "subtle" },
                        { 46, "noticeable" }, { 71, "bold, still recognisable" } }
 
@@ -710,18 +718,31 @@ local function drawVariations()
   local var = together(function(j) return shown[j].notes end)
   pianoRoll({ { orig, SOURCE_NOTE }, { var, SELECTED } }, beats, ui.srcs[1].barBeats, math.max(160, w), 110)
 
+  -- The changes, each with a box: untick one to leave it out of this
+  -- variation - the others stay exactly as they are.
   local lines = {}
   for j, var in ipairs(shown) do
-    for _, c in ipairs(var.changes) do
-      lines[#lines + 1] = (#ui.srcs > 1 and ("\"" .. ui.srcs[j].name .. "\"  ") or "") .. c
+    for _, c in ipairs(var.moves) do
+      lines[#lines + 1] = { j = j, c = c,
+        text = (#ui.srcs > 1 and ("\"" .. ui.srcs[j].name .. "\"  ") or "") .. c.text }
     end
   end
   if #lines == 0 then
     dim(st.amount == 0 and "No changes to the notes." or "Only the feel changes in this one.")
   end
   for i, line in ipairs(lines) do
-    if i > 6 then dim(("and %d more"):format(#lines - 6)); break end
-    dim(line)
+    if i > MAX_LINES then dim(("and %d more"):format(#lines - MAX_LINES)); break end
+    local c = line.c
+    local changed, on = ImGui.Checkbox(ctx, ("%s##change%d.%d"):format(line.text, line.j, c.id), not c.skipped)
+    if changed then
+      ui.skips[line.j] = ui.skips[line.j] or {}
+      local per = ui.skips[line.j]
+      per[ui.show] = per[ui.show] or {}
+      per[ui.show][c.id] = (not on) or nil
+      ui.dirty = true    -- not touched(): that would forget the other boxes
+    end
+    tip("Untick to leave this change out of this variation. Every other\n" ..
+        "change, and the feel, stays exactly as it is.")
   end
 
   ImGui.Dummy(ctx, 0, 4)

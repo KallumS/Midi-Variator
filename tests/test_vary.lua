@@ -861,6 +861,107 @@ for _, name in ipairs({ "twinkle", "noir", "drums", "run", "minorTune", "riff", 
 end
 
 ------------------------------------------------------------------------------
+-- Unticking a change
+------------------------------------------------------------------------------
+
+local function set(...)
+  local t = {}
+  for _, k in ipairs({ ... }) do t[k] = true end
+  return t
+end
+
+-- Every fixture: unticking one change leaves every other change listed as
+-- it was; unticking them all gives back the original exactly.
+for _, name in ipairs(NAMES) do
+  local src = source(F[name])
+  local an = V.analyse(src, T)
+  local orig = fingerprint(V.copyNotes(src.notes))
+  for _, amount in ipairs({ 0.35, 1 }) do
+    for seed = 1, 20 do
+      local tag = ("%s at %d%%, seed %d"):format(name, amount * 100, seed)
+      local o = feelOff(opts({ amount = amount, develop = amount > V.DEVELOP_FROM }))
+      local var = V.vary(src, an, o, seed, T)
+      local all = {}
+      for _, c in ipairs(var.moves) do all[c.id] = true end
+      for _, c in ipairs(var.moves) do
+        o.skip = set(c.id)
+        local less = V.vary(src, an, o, seed, T)
+        local want = {}
+        for _, d in ipairs(var.moves) do if d.id ~= c.id then want[#want + 1] = d.text end end
+        if not eq(table.concat(less.changes, "|"), table.concat(want, "|"),
+                  tag .. ": unticking one leaves the others") then break end
+        local skipped = 0
+        for _, d in ipairs(less.moves) do if d.skipped then skipped = skipped + 1 end end
+        eq(skipped, 1, tag .. ": and lists it as unticked")
+        -- Every note the change made is gone or back to the original's.
+        local isOrig = {}
+        for _, n in ipairs(src.notes) do isOrig[("%d@%.4f"):format(n.pitch, n.start)] = true end
+        local inVar = {}
+        for _, n in ipairs(var.notes) do inVar[("%d@%.4f"):format(n.pitch, n.start)] = true end
+        local bad
+        for _, n in ipairs(less.notes) do
+          local k = ("%d@%.4f"):format(n.pitch, n.start)
+          if not inVar[k] and not isOrig[k] then bad = k end
+        end
+        if not ok(not bad, tag .. ": unticked, nothing new appears (" .. tostring(bad) .. ")") then break end
+      end
+      o.skip = all
+      local none = V.vary(src, an, o, seed, T)
+      if not eq(fingerprint(none.notes), orig, tag .. ": every change unticked is the original") then break end
+      eq(#none.changes, 0, tag .. ": with no changes listed")
+      o.skip = nil
+    end
+  end
+end
+
+-- With the feel on, unticking a change leaves the feel on every other
+-- note exactly as it was: a bent note unticked is the only note that
+-- differs, and only in its pitch.
+do
+  local src = source(F.noir)
+  local an = V.analyse(src, T)
+  local checked = 0
+  for seed = 1, 60 do
+    local o = opts({ amount = 0.5 })
+    local var = V.vary(src, an, o, seed, T)
+    for _, c in ipairs(var.moves) do
+      if c.move == "neighbour" then
+        o.skip = set(c.id)
+        local less = V.vary(src, an, o, seed, T)
+        eq(#less.notes, #var.notes, "noir seed " .. seed .. ": as many notes")
+        -- (A length may differ where the note back at its pitch now meets
+        -- a note of that pitch, and the two are kept from overlapping.)
+        local differ, lens = 0, 0
+        for i, n in ipairs(less.notes) do
+          local m = var.notes[i]
+          if n.pitch ~= m.pitch then differ = differ + 1 end
+          if n.len ~= m.len then lens = lens + 1 end
+          ok(n.start == m.start and n.vel == m.vel, "noir seed " .. seed .. ": the feel unchanged")
+        end
+        eq(differ, 1, "noir seed " .. seed .. ": one note's pitch back")
+        ok(lens <= 2, "noir seed " .. seed .. ": and no length changed but beside it")
+        checked = checked + 1
+        o.skip = nil
+      end
+    end
+  end
+  ok(checked > 10, "neighbour changes unticked with the feel on (" .. checked .. ")")
+end
+
+-- A series passes each variation its own unticked changes.
+do
+  local src = source(F.twinkle)
+  local an = V.analyse(src, T)
+  local o = opts({ amount = 0.6 })
+  local run = V.series(src, an, o, 9, 4, T)
+  local skips = { [2] = set(1) }
+  local again = V.series(src, an, o, 9, 4, T, nil, nil, skips)
+  eq(fingerprint(again[1].notes), fingerprint(run[1].notes), "a series: the first, nothing unticked, as it was")
+  ok(#again[2].changes == #run[2].changes - 1, "the second has one change fewer")
+  eq(fingerprint(again[3].notes), fingerprint(run[3].notes), "and the rest as they were")
+end
+
+------------------------------------------------------------------------------
 -- Developing the motif (near 100%)
 ------------------------------------------------------------------------------
 

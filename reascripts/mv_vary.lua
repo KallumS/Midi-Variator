@@ -2162,17 +2162,62 @@ function M.budget(amount, count)
   return want, cap
 end
 
+--[[  Unticking a change.
+
+      The window lists a variation's changes with a box each; unticking
+      one takes that change out and leaves every other one exactly as it
+      was. So the moves still all run, drawing the same dice, and each
+      remembers what it did (`record`); at the end the unticked ones are
+      undone (`undo`): their notes back as they were, their added notes
+      gone. A note a later change touched again keeps the later change.
+      Added notes are marked gone, not removed, so the feel - which draws
+      dice note by note - falls on every other note exactly as before. ]]
+local FIELDS = { "pitch", "start", "len", "gone" }
+
+local function snapshot(v)
+  local snap = { count = #v.notes }
+  for i, n in ipairs(v.notes) do snap[i] = { n.pitch, n.start, n.len, n.gone or false } end
+  return snap
+end
+
+-- What one change did: { { note, field, before, after }, ... } and the
+-- notes it added.
+local function record(v, snap)
+  local diff, added = {}, {}
+  for i = 1, snap.count do
+    local n = v.notes[i]
+    for f, field in ipairs(FIELDS) do
+      local now = n[field] or (field == "gone" and false or nil)
+      if now ~= snap[i][f] then diff[#diff + 1] = { n, field, snap[i][f], now } end
+    end
+  end
+  for i = snap.count + 1, #v.notes do added[#added + 1] = v.notes[i] end
+  return { diff = diff, added = added }
+end
+
+local function undo(rec)
+  for k = #rec.diff, 1, -1 do
+    local d = rec.diff[k]
+    local now = d[1][d[2]] or (d[2] == "gone" and false or nil)
+    if now == d[4] then d[1][d[2]] = d[3] or nil end
+  end
+  for _, n in ipairs(rec.added) do n.gone = true end
+end
+
 --[[  One variation of the original `src`, analysed as `an`.
 
       opts: amount (0-1), focus (1-3), keepEnds, and each kind and feel key
             (notes, rhythm, add, remove, chords, timing, velocity, lengths)
-            true or false.
+            true or false. `skip`, if given, is a set of change ids (each
+            change's `id`, the order it was made in) to leave out.
       seed: which variation - the same seed always gives the same one.
 
       history: optional, shared by a series (see `candidates`); added to.
 
-      Returns { notes = {...}, changes = { "Bar 2, beat 3: ...", ... } },
-      the changes in the order they happen in the music. ]]
+      Returns { notes = {...}, changes = { "Bar 2, beat 3: ...", ... },
+      moves = { { text, move, kind, at, event, id, skipped }, ... } }, the
+      changes in the order they happen in the music. `changes` lists only
+      the ones kept; `moves` all of them, the unticked marked `skipped`. ]]
 function M.vary(src, an, opts, seed, T, history)
   local r = M.random(seed)
   local v = { src = src, an = an, opts = opts, r = r, T = T, touched = {}, notes = {},
@@ -2202,6 +2247,9 @@ function M.vary(src, an, opts, seed, T, history)
   local amount = math.max(0, math.min(1, opts.amount or 0))
   local want, cap = M.budget(amount, an.count)
   local changes = {}
+  -- Unticked changes: each change's doing is recorded, to be undone.
+  local skip = opts.skip and next(opts.skip) and opts.skip
+  local records = {}
   local goal = 0
   if want > 0 then goal = math.min(cap, math.max(1, math.floor(want + r()))) end
 
@@ -2220,11 +2268,13 @@ function M.vary(src, an, opts, seed, T, history)
     local x = (amount - M.DEVELOP_FROM) / (1 - M.DEVELOP_FROM)
     local c = M.DEVELOP_CHANCE
     if coin(r, c[1] + (c[2] - c[1]) * x) then
+      local snap = skip and snapshot(v)
       local said, name, u, t0, t1 = M.developOnce(v, x)
       if said then
         local e = v.chosen
         changes[#changes + 1] = { text = said, move = name, kind = "develop", at = e.start, event = e.index,
-                                  from = t0, to = t1 }
+                                  from = t0, to = t1, id = #changes + 1 }
+        if snap then records[#changes] = record(v, snap) end
         if history then
           history["develop@" .. u] = (history["develop@" .. u] or 0) + 1
           history[name] = (history[name] or 0) + 1
@@ -2246,10 +2296,13 @@ function M.vary(src, an, opts, seed, T, history)
     end
     local name = choose(r, names, ws)
     v.move, v.chosen = name, nil
+    local snap = skip and snapshot(v)
     local said = MOVES[name](v)
     if said then
       local e = v.chosen
-      changes[#changes + 1] = { text = said, move = name, kind = kind.key, at = e.start, event = e.index }
+      changes[#changes + 1] = { text = said, move = name, kind = kind.key, at = e.start, event = e.index,
+                                id = #changes + 1 }
+      if snap then records[#changes] = record(v, snap) end
       if history then
         history["@" .. e.index] = (history["@" .. e.index] or 0) + 1
         history[name .. "@" .. e.index] = (history[name .. "@" .. e.index] or 0) + 1
@@ -2261,27 +2314,36 @@ function M.vary(src, an, opts, seed, T, history)
     e.notes, e.top, e.bass = saved[e].notes, saved[e].top, saved[e].bass
   end
 
+  -- The unticked ones undone, latest first.
+  if skip then
+    for id = #changes, 1, -1 do
+      if skip[id] then undo(records[id]); changes[id].skipped = true end
+    end
+  end
+
   applyFeel(v, math.sqrt(amount))
   local notes = tidy(v)
   table.sort(changes, function(a, b) return a.at < b.at end)
   local texts = {}
-  for i, c in ipairs(changes) do texts[i] = c.text end
+  for _, c in ipairs(changes) do if not c.skipped then texts[#texts + 1] = c.text end end
   return { notes = notes, changes = texts, moves = changes }
 end
 
 --[[  A run of variations, each made from the original - never from the one
       before it. With `grow`, the first ones are gentler and the last one
       gets the full amount, so a repeated motif can build. `history` may be
-      passed in to carry on from an earlier batch of the same original. ]]
-function M.series(src, an, opts, baseSeed, count, T, j, history)
+      passed in to carry on from an earlier batch of the same original.
+      `skips[i]`, if given, is the set of changes unticked in the i-th. ]]
+function M.series(src, an, opts, baseSeed, count, T, j, history, skips)
   local out = {}
   history = history or {}
   for i = 1, count do
     local o = opts
-    if opts.grow and count > 1 then
+    if (opts.grow and count > 1) or (skips and skips[i]) then
       o = {}
       for k, x in pairs(opts) do o[k] = x end
-      o.amount = opts.amount * (0.4 + 0.6 * (i - 1) / (count - 1))
+      if opts.grow and count > 1 then o.amount = opts.amount * (0.4 + 0.6 * (i - 1) / (count - 1)) end
+      o.skip = skips and skips[i]
     end
     out[i] = M.vary(src, an, o, M.seedFor(baseSeed, i - 1, j), T, history)
   end
