@@ -18,3 +18,9 @@ the standing rules; this holds the decisions behind them.
 | [0005](0005-rewrite-in-place-only-when-safe.md) | An item is rewritten in place only when nothing else shares its MIDI |
 | [0006](0006-pick-a-scale-and-pivot.md) | A picked scale pivots the original by nearest note, same letter on a tie |
 | [0007](0007-chord-quality-by-scaleview-pro.md) | Chord quality changes by rules over ScaleView Pro's reading, one small step each |
+| [0008](0008-develop-the-motif-near-100.md) | Near 100%, a stretch of the music may be developed |
+| [0009](0009-arpeggiated-chords-read-by-the-bar.md) | Arpeggiated chords are read a bar (or half bar) at a time |
+| [0010](0010-untick-by-undoing-what-a-change-did.md) | Unticking a change undoes what it did; it never re-rolls |
+| [0011](0011-forms-and-echoes.md) | Motif memory is a form for the batch; an echo is the same changes played afresh |
+| [0012](0012-items-that-sound-together-vary-as-one.md) | Items that sound together are varied as one piece |
+| [0013](0013-audition-in-the-originals-place.md) | Audition plays the variation in the original's place, on its own track |

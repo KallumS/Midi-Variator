@@ -1,6 +1,8 @@
 # 0007. Chord quality changes by rules over ScaleView Pro's reading, one small step each
 
-Taken 2026-09-29. Stands.
+Taken 2026-09-29. Stands. Extended by
+[0009](0009-arpeggiated-chords-read-by-the-bar.md): arpeggiated chords are
+now changed too.
 
 ## Context
 

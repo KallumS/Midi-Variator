@@ -7,15 +7,18 @@
  *
  * About:          Import a .mid file (or play something in), select the item,
  *                 and run this. Choose how much may change and what, preview
- *                 the variations against the original, then make them after
- *                 it on the same track. Every variation keeps the original
- *                 inside it, so it can be varied again - from the original -
- *                 or put back.
+ *                 and audition the variations against the original, untick
+ *                 any change you don't like, then make them after it on the
+ *                 same track. Near 100% a stretch of the motif may be
+ *                 developed - inverted, reversed, sequenced. A melody and its
+ *                 chords on two tracks are varied together. Every variation
+ *                 keeps the original inside it, so it can be varied again -
+ *                 from the original - or put back.
  *
  *                 Needs ReaImGui, from the ReaTeam Extensions repository.
  * Author:         Kallum Shah
  * Links:          https://github.com/KallumS/Midi-Variator
- * Version:        1.2
+ * Version:        1.3
  * Provides:
  *   mv_theory.lua
  *   mv_vary.lua

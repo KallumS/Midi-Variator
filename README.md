@@ -71,8 +71,12 @@ button lights up while the window is open.
 5. **Look at the preview.** The picture shows your original in grey and the
    variation in yellow, with a list of exactly what changed underneath
    ("Bar 3, beat 2: F4 moved up to G4"). Use **<** and **>** to look through
-   the whole set, and **New set** for a different set.
-6. Press **Make 4 variations** (or however many you chose). They go on the
+   the whole set, and **New set** for a different set. Don't like one of
+   the changes? **Untick it** - see *Choosing the changes* below.
+6. **Listen.** Press **Audition** to hear the variation in your
+   original's place, with the rest of your project - see *Hearing one
+   first* below.
+7. Press **Make 4 variations** (or however many you chose). They go on the
    same track straight after your original, one after another.
 
 It is all one undo step: Ctrl+Z (Cmd+Z) takes a whole batch back.
@@ -104,19 +108,21 @@ Drums have no scale, so a drum clip has no Scale step.
 
 | Control | What it does |
 | --- | --- |
-| **How much** | From 0% (exact copies) to 100% ("bold, still recognisable"). It tells you roughly how many changes that means for your clip - at the default 35%, about one or two changes in a short phrase. Even at 100%, most of the original stays exactly as it was. |
+| **How much** | From 0% (exact copies) to 100% ("bold, still recognisable"). It tells you roughly how many changes that means for your clip - at the default 35%, about one or two changes in a short phrase. Up to 70%, most of the original stays exactly as it was; above 70%, *Develop the motif* starts to make bigger changes. |
+| **Develop the motif** | Shown above 70%. Now and then a variation takes a stretch of your music and develops it the way a composer brings a motif back: **turned upside down** (inverted - where the tune went up, it goes down), **played in reverse order**, **moved up or down the scale** (a sequence - "the tune moved up a third"), its **intervals widened** (steps become thirds) or **narrowed** (leaps become steps), or **its first half repeated a step lower** in place of the second. The higher the amount, the more often, and the longer the stretch - a bar or two just above 70%, up to most of the phrase at 100%. The rhythm stays, so it is still recognisably your motif; it stays in the scale; with chords under a tune, only the tune is turned or reversed and it stays on top of the chords; nothing new grinds; and the first and last notes stay when *Keep the first and last notes* is on. Switch it off to keep 100% small. Never for drums. |
 | **Notes** | A note moved one step up or down the key, or now and then an octave (never beyond the range your clip already uses). |
 | **Rhythm** | A long note struck twice instead of held, two repeated notes tied into one, or a note (or chord) coming in a little early - "pushed", as in pop and jazz - or a little late. |
 | **Add notes** | A passing note filling in a leap, a quick grace note, a pickup note leading into a note after a rest, an extra note in a chord, or - for drums - a quiet "ghost" hit. |
 | **Leave notes out** | A weak note left out (sometimes the note before rings on over the gap instead), or a chord thinned by one inner note. |
 | **Chord voicing** | A chord revoiced (an inner note moved an octave) or rolled like a strum. Only shown when your clip has chords. |
-| **Chord quality** | A chord changed into a neighbouring kind of chord. The chord is read by ScaleView Pro's chord detector - the same one, so the same names. **Adding a note**: C to Cmaj7, C6 or Cadd9; G7 to G9, G7(13) or G7b9; Cmin7 to Cmin9 or Cmin11; Cdim to Cdim7. **Moving a note**: sus4 and sus2 chords (and back), minor to major and back, Cmin to Cdim, Cmin7 to Cmin7b5, C to Caug, G7 to G11. **Dropping a note**: G7 to G. The bass never moves, and a chord struck several times in a row changes every time it is struck. The list of changes says what each chord became ("Bar 2, beat 1: G7 became G9"). Only shown when your clip has chords. |
+| **Chord quality** | A chord changed into a neighbouring kind of chord. The chord is read by ScaleView Pro's chord detector - the same one, so the same names. **Adding a note**: C to Cmaj7, C6 or Cadd9; G7 to G9, G7(13) or G7b9; Cmin7 to Cmin9 or Cmin11; Cdim to Cdim7. **Moving a note**: sus4 and sus2 chords (and back), minor to major and back, Cmin to Cdim, Cmin7 to Cmin7b5, C to Caug, G7 to G11. **Dropping a note**: G7 to G. The bass never moves, and a chord struck several times in a row changes every time it is struck. **Arpeggiated chords too**: a bar (or half bar) of single notes going round a chord - an Alberti bass, a broken-chord accompaniment - is read as that chord and changed the same way: C G E G can become C G E B (Cmaj7), and the same arpeggio bar after bar changes together. The list of changes says what each chord became ("Bar 2, beat 1: G7 became G9", "Bar 3: the arpeggio Amin became Amin7"). Only shown when your clip has chords. |
 | **Chord changes may leave the scale** | Shown while *Chord quality* is on. **Off** (the default): a chord only changes into one whose notes are in the scale - in C major, G7 can become G9 or G11, C can become Cmaj7. **On**: it may borrow notes from outside - C can become Cmin or Caug, G7 can become G7b9 (the diminished sound), Amin can become Adim. |
 | **Timing, Velocity, Lengths** | The "feel": each moment a few milliseconds early or late, a little louder or softer with a gentle swell across the phrase, notes held a touch longer or shorter. Switch these off if you want the notes to stay exactly on the grid. |
 | **Where** | *Anywhere*, *Towards the end* or *Towards the start*. **Towards the end** is the classic way to vary a repeated motif: it starts the same and answers differently. |
 | **Keep the first and last notes** | The notes that open and close the phrase stay exactly as they are, so every variation is recognisably the same motif. On by default. |
 | **How many** | 1 to 16 variations in one go. |
 | **Grow across the series** | The first variations change less and the last the full amount, so a repeated motif builds. Each is still made from the original. |
+| **Form** | What comes after your original (A), when you make more than one - motif memory. **All new**: A' A'' A''' ... - a new variation every time. **Home between**: A' A A'' A - your original comes back between the variations, played afresh (only the feel new). **In pairs**: A' A' A'' A'' - each variation stated, then echoed. **A refrain**: A' A'' A' A''' - the first variation keeps coming back between new ones. An echo plays exactly the same changes as the one it echoes, with a feel of its own, the way a player never plays a phrase twice exactly alike. The letters for your batch are shown beside the buttons. |
 
 A switch that is **on is yellow**, off is grey.
 
@@ -138,6 +144,29 @@ A switch that is **on is yellow**, off is grey.
   in one is less likely to be changed in the next, so twenty variations
   don't all bend the same note.
 
+### Choosing the changes
+
+Every change in the list has a tick box. **Untick one you don't like** and
+it is taken out of that variation; every other change - and the feel -
+stays exactly as it was, and *Make* makes it without that change. In an
+echo (*In pairs*, *A refrain*), unticking a change unticks it in the
+variation it echoes too. Changing any setting, **New set** or **Make**
+starts a fresh batch with every box ticked.
+
+### Hearing one first
+
+**Audition** plays the variation shown in your original's place: on the
+original's own track, through the same instrument, with the rest of the
+project playing, from the bar it starts in. Your original is silent while
+it plays. Press **<** and **>** while it plays to hear the others in the
+batch - each comes straight in. **Stop** (or REAPER's own stop, or reaching
+the end) puts everything back: the original unmuted, the edit cursor where
+it was. Nothing is added to your project or your undo history.
+
+If the track uses REAPER 7's fixed item lanes (which play only one lane),
+the audition plays on a temporary track under it, with a copy of its
+effects, instead.
+
 ### Varying copies you already have
 
 If you have already laid out your phrase several times (copied and pasted
@@ -156,10 +185,19 @@ Select any variations and press **Put back the original** (it appears when
 a selected item is a variation). They play the original again, and can be
 varied again later.
 
-### Several items at once
+### Several items at once - a melody and its chords together
 
-Select a melody and its chords on different tracks together, and each is
-varied on its own track, with the variations lined up bar for bar.
+Select a melody and its chords on different tracks together and press
+*Use selected items*. When items sound at the same time, a **Vary them
+together** switch appears (on by default): they are varied **as one
+piece**. A changed melody note never grinds against the chords, a changed
+chord never grinds against the tune, the scale is heard from all of them,
+and a note added to a chord goes on the chords' track (not the bass's).
+Each variation of the melody lands over the same variation of the chords,
+lined up bar for bar - in a place free on every track. *Vary selected in
+place* does the same for the groups you select.
+
+Switch it off and each item is varied on its own, as before.
 
 ## If something goes wrong
 
