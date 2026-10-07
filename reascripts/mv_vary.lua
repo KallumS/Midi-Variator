@@ -608,9 +608,11 @@ local function harsh(a, b)
 end
 
 -- True if `pitch` at [t0, t1) would grind against something else sounding,
--- where `note` (the one being changed) did not.
-local function clashes(v, note, pitch, t0, t1)
-  for _, o in ipairs(v.notes) do
+-- where `note` (the one being changed) did not. `near`, if given, is the
+-- notes to look at (all of them, or at least all sounding in [t0, t1)).
+-- (Declared here, used by the moves below.)
+local function clashes(v, note, pitch, t0, t1, near)
+  for _, o in ipairs(near or v.notes) do
     if o ~= note and not o.gone and not isDrum(o)
        and o.start < t1 - 1e-6 and noteEnd(o) > t0 + 1e-6 then
       if harsh(pitch, o.pitch) and not (note and harsh(note.pitch, o.pitch)) then return true end
@@ -1697,6 +1699,34 @@ local function distance(L, s, d)
   return INTERVAL_NAMES[math.min(12, math.abs(d))]
 end
 
+-- The notes in time order, to find what sounds when without looking at
+-- every note: a develop on a long piece moves hundreds of notes, and
+-- asking all two thousand about each one took seconds.
+local function noteIndex(notes)
+  local list, most = {}, 0
+  for _, n in ipairs(notes) do list[#list + 1] = n; most = math.max(most, n.len) end
+  table.sort(list, function(a, b) return a.start < b.start end)
+  return { list = list, most = most }
+end
+
+-- Every note of `idx` that may sound in [t0, t1) - a few more, never fewer.
+local function around(idx, t0, t1)
+  local list = idx.list
+  local from = t0 - idx.most - 1e-3
+  local lo, hi = 1, #list + 1
+  while lo < hi do
+    local mid = (lo + hi) // 2
+    if list[mid].start < from then lo = mid + 1 else hi = mid end
+  end
+  local out = {}
+  for i = lo, #list do
+    local o = list[i]
+    if o.start >= t1 + 1e-3 then break end
+    if noteEnd(o) > t0 - 1e-3 then out[#out + 1] = o end
+  end
+  return out
+end
+
 -- The moments of [t0, t1) a develop may change, and the pitched notes of
 -- each that sound (the tune is the top one).
 local function spanMoments(v, t0, t1)
@@ -1711,7 +1741,7 @@ local function spanMoments(v, t0, t1)
         local m = { e = e, notes = ns, top = ns[#ns] }
         -- A moment whose top note is under something still held from
         -- before (a walking bass under a held chord) is not the tune.
-        for _, o in ipairs(v.notes) do
+        for _, o in ipairs(around(v.byTime, e.start, e.start + 1e-6)) do
           if not o.gone and not isDrum(o) and o.event ~= e and o.start < e.start - 1e-6
              and noteEnd(o) > e.start + 1e-6 and o.pitch > m.top.pitch then
             m.under = true
@@ -1751,8 +1781,9 @@ local function placeTune(v, L, line, targets)
     local n = m.top
     -- Everything else sounding when it is struck - its own chord, or one
     -- held from before - stays under it.
+    local near = around(v.byTime, n.start, noteEnd(n) + M.ONSET)
     local below = -1
-    for _, o in ipairs(v.notes) do
+    for _, o in ipairs(near) do
       if not isTune[o] and not o.gone and not isDrum(o)
          and o.start <= n.start + M.ONSET and noteEnd(o) > n.start + 1e-6 then
         below = math.max(below, o.pitch)
@@ -1760,7 +1791,7 @@ local function placeTune(v, L, line, targets)
     end
     local function good(q)
       return inRange(v, q) and q > below
-         and not clashes(v, n, q, n.start, noteEnd(n))
+         and not clashes(v, n, q, n.start, noteEnd(n), near)
     end
     local s, off = targets[i][1], targets[i][2]
     local placed
@@ -1874,9 +1905,14 @@ end
 -- held chord and the tune over it.
 local function harshPairs(notes, new)
   local k = 0
+  local sorted = {}
+  for i, n in ipairs(notes) do sorted[i] = n end
+  table.sort(sorted, function(a, b) return a.start < b.start end)
+  notes = sorted
   for i = 1, #notes do
     for j = i + 1, #notes do
       local a, b = notes[i], notes[j]
+      if b.start >= noteEnd(a) - 1e-6 then break end   -- in time order: none later overlaps a
       if a.start < noteEnd(b) - 1e-6 and b.start < noteEnd(a) - 1e-6 then
         local pa = new and new[a] or a.pitch
         local pb = new and new[b] or b.pitch
@@ -1922,8 +1958,15 @@ function DEVELOP.transpose(v, L, line)
       -- Nothing outside the stretch that sounds with it may grind against
       -- the moved notes, or be doubled by one.
       if ok then
+        -- (Only the notes sounding with the stretch need asking.)
+        local t0, t1 = math.huge, -math.huge
+        for n in pairs(new) do t0, t1 = math.min(t0, n.start), math.max(t1, noteEnd(n)) end
+        local outside = {}
+        for _, o in ipairs(around(v.byTime, t0, t1)) do
+          if not inLine[o] then outside[#outside + 1] = o end
+        end
         for n, q in pairs(new) do
-          for _, o in ipairs(v.notes) do
+          for _, o in ipairs(outside) do
             if not inLine[o] and not o.gone and not isDrum(o)
                and o.start < noteEnd(n) - 1e-6 and noteEnd(o) > n.start + 1e-6
                and (o.pitch == q or (harsh(q, o.pitch) and not harsh(n.pitch, o.pitch))) then
@@ -1989,7 +2032,7 @@ function DEVELOP.fragment(v, L, line, t0, t1)
       end
       local bad = false
       for _, c in ipairs(copies) do
-        if clashes(v, nil, c.pitch, c.start, noteEnd(c)) then bad = true end
+        if clashes(v, nil, c.pitch, c.start, noteEnd(c), around(v.byTime, c.start, noteEnd(c))) then bad = true end
       end
       if not bad then
         for _, c in ipairs(copies) do add(v, c) end
@@ -2013,6 +2056,13 @@ M.DEVELOP_MOVES = DEVELOP
       The stretch is whole bars (half bars for music of a bar or less),
       placed as the Where setting asks. Returns the change, or nil. ]]
 function M.developOnce(v, x)
+  v.byTime = noteIndex(v.notes)
+  local said, name, u, t0, t1 = M.developStretch(v, x)
+  v.byTime = nil
+  return said, name, u, t0, t1
+end
+
+function M.developStretch(v, x)
   local an, src = v.an, v.src
   local first, last = an.events[1], an.events[#an.events]
   if not first then return nil end
