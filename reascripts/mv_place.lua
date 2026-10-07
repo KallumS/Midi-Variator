@@ -233,6 +233,54 @@ function M.slots(src, count)
   return out
 end
 
+--[[  Where the variations of several items varied together go: each the
+      same distance after its own item, so the melody's third variation
+      plays over the chords' third. The step is the whole group's length
+      rounded up to whole bars; a place is used only if every item's slot
+      in it is free on its own track. Returns at[k] = positions for srcs[k]. ]]
+function M.slotsTogether(srcs, count)
+  local first, finish = math.huge, -math.huge
+  for _, s in ipairs(srcs) do
+    first = math.min(first, s.startQN)
+    finish = math.max(finish, s.startQN + s.lengthQN)
+  end
+  local bb = srcs[1].barBeats
+  local step = math.max(1, math.ceil((finish - first) / bb - 1e-6)) * bb
+  local taken = {}   -- per track, what is already there
+  for _, s in ipairs(srcs) do
+    if not taken[s.track] then
+      taken[s.track] = {}
+      for i = 0, reaper.CountTrackMediaItems(s.track) - 1 do
+        local it = reaper.GetTrackMediaItem(s.track, i)
+        local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
+        local l = reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
+        table.insert(taken[s.track], { reaper.TimeMap2_timeToQN(0, p), reaper.TimeMap2_timeToQN(0, p + l) })
+      end
+    end
+  end
+  local at = {}
+  for k = 1, #srcs do at[k] = {} end
+  local j = 1
+  while #at[1] < count and j < count + 10000 do
+    local free = true
+    for _, s in ipairs(srcs) do
+      local a, b = s.startQN + j * step, s.startQN + j * step + s.lengthQN
+      for _, t in ipairs(taken[s.track]) do
+        if t[1] < b - 1e-6 and t[2] > a + 1e-6 then free = false; break end
+      end
+    end
+    if free then
+      for k, s in ipairs(srcs) do
+        local a = s.startQN + j * step
+        at[k][#at[k] + 1] = a
+        table.insert(taken[s.track], { a, a + s.lengthQN })
+      end
+    end
+    j = j + 1
+  end
+  return at
+end
+
 -- The number the next variation of `src` gets: one more than the highest
 -- among the variations of the same original already on its track.
 function M.nextIndex(src)
@@ -268,12 +316,13 @@ local function keepOriginal(item, src, index)
   reaper.GetSetMediaItemInfo_String(item, M.EXT, V.encode(src.original, src.lengthQN, src.name, index), true)
 end
 
---[[  A new item holding `notes`, at `atQN` on the source's track, carrying
-      the source's CCs, colour and volume, and its original. ]]
-function M.create(src, notes, atQN, index)
+--[[  A new item holding `notes`, at `atQN` on the source's track (or on
+      `track`), carrying the source's CCs, colour and volume, and its
+      original. ]]
+function M.create(src, notes, atQN, index, track)
   local t0 = reaper.TimeMap2_QNToTime(0, atQN)
   local t1 = reaper.TimeMap2_QNToTime(0, atQN + src.lengthQN)
-  local item = reaper.CreateNewMIDIItemInProj(src.track, t0, t1, false)
+  local item = reaper.CreateNewMIDIItemInProj(track or src.track, t0, t1, false)
   if not item then return nil end
   local take = reaper.GetActiveTake(item)
   if valid(src.take, "MediaItem_Take*") and valid(src.item, "MediaItem*") then
@@ -314,7 +363,8 @@ function M.make(jobs)
   reaper.PreventUIRefresh(1)
   local made = {}
   for _, job in ipairs(jobs) do
-    local at = M.slots(job.src, #job.variations)
+    -- (Items varied together come with their places worked out together.)
+    local at = job.at or M.slots(job.src, #job.variations)
     for i, notes in ipairs(job.variations) do
       local item = at[i] and M.create(job.src, notes, at[i], (job.first or 1) + i - 1)
       if not item then
@@ -363,14 +413,36 @@ end
 --[[  Each item in `items` rewritten with `notesFor(src, k)` - a new
       variation of its original, in place. One undo step. ]]
 function M.varyInPlace(items, notesFor)
+  return M.varyGroupsInPlace(items, function(srcs, k) return { notesFor(srcs[1], k) } end, false)
+end
+
+--[[  The same, with the items that sound together varied as one piece
+      (when `together`): `notesFor(srcs, k)` gets a group's sources and
+      returns a note list for each. Every item is read before any is
+      rewritten, and each rewrite replaces only its own item. ]]
+function M.varyGroupsInPlace(items, notesFor, together)
   if #items == 0 then return M.NO_ITEM, 0 end
   reaper.Undo_BeginBlock()
   reaper.PreventUIRefresh(1)
-  local out = {}
-  for k, item in ipairs(items) do
+  local srcs = {}
+  for _, item in ipairs(items) do
     local src = M.readItem(item)
-    if src and #src.notes > 0 then
-      local it = M.rewrite(src, notesFor(src, k))
+    if src and #src.notes > 0 then srcs[#srcs + 1] = src end
+  end
+  local groups = {}
+  if together then
+    table.sort(srcs, function(a, b) return a.startQN < b.startQN end)
+    groups = V.groups(srcs)
+  else
+    for j = 1, #srcs do groups[j] = { j } end
+  end
+  local out = {}
+  for k, grp in ipairs(groups) do
+    local members = {}
+    for i, j in ipairs(grp) do members[i] = srcs[j] end
+    local lists = notesFor(members, k)
+    for i, src in ipairs(members) do
+      local it = M.rewrite(src, lists[i])
       if it then out[#out + 1] = it end
     end
   end
@@ -396,6 +468,162 @@ function M.restore(items)
   if #out > 0 then selectOnly(out) end
   finish("Midi Variator: put back the original", out)
   return #out > 0 and M.OK or M.NOTHING, #out
+end
+
+------------------------------------------------------------------------------
+-- Hearing a variation first
+--
+-- The variation plays IN THE ORIGINAL'S PLACE: a temporary item on the
+-- original's own track, at the original's position, with the original
+-- item muted - so it is heard through the same instrument, sends and
+-- volume, with the rest of the project around it. The project plays from
+-- the bar the first item starts in, and stops at the end of the last.
+--
+-- A track in fixed item lanes (REAPER 7) plays only one lane, so there the
+-- variation goes on a temporary track under it with a copy of its FX
+-- instead (Midi Suggester's way).
+--
+-- Stopping - here, with REAPER's own transport, or at the end - takes the
+-- temporary items and tracks away, unmutes the originals and puts the edit
+-- cursor back. All of it is outside any undo block, so it leaves no undo
+-- history; each thing is marked (P_EXT:MidiVariatorAudition) so that
+-- whatever a crash leaves behind is swept up when the script starts.
+------------------------------------------------------------------------------
+
+M.AUDITION = "P_EXT:MidiVariatorAudition"
+M.AUDITION_NAME = "Midi Variator audition"
+
+local audition = { items = {}, tracks = {}, muted = {}, srcs = {} }
+M.audition = audition
+
+local function validTrack(track) return valid(track, "MediaTrack*") end
+
+-- A track under `src`'s, with a copy of its FX, so it sounds the same.
+local function trackBelow(src)
+  local idx = reaper.GetMediaTrackInfo_Value(src.track, "IP_TRACKNUMBER")
+  if idx <= 0 then idx = reaper.CountTracks(0) end   -- 1-based number = the slot after it
+  reaper.InsertTrackAtIndex(idx, true)
+  local track = reaper.GetTrack(0, idx)
+  reaper.GetSetMediaTrackInfo_String(track, "P_NAME", M.AUDITION_NAME, true)
+  reaper.GetSetMediaTrackInfo_String(track, M.AUDITION, "track", true)
+  for fx = 0, reaper.TrackFX_GetCount(src.track) - 1 do
+    reaper.TrackFX_CopyToTrack(src.track, fx, track, fx, false)
+  end
+  return track
+end
+
+function M.auditioning() return #audition.items > 0 end
+
+function M.auditionStop()
+  if not M.auditioning() then return end
+  reaper.PreventUIRefresh(1)
+  if reaper.GetPlayState() & 1 == 1 then reaper.OnStopButton() end
+  for _, item in ipairs(audition.items) do
+    if valid(item, "MediaItem*") then reaper.DeleteTrackMediaItem(reaper.GetMediaItem_Track(item), item) end
+  end
+  for _, track in ipairs(audition.tracks) do
+    if validTrack(track) then reaper.DeleteTrack(track) end
+  end
+  for _, item in ipairs(audition.muted) do
+    if valid(item, "MediaItem*") then
+      reaper.SetMediaItemInfo_Value(item, "B_MUTE", 0)
+      reaper.GetSetMediaItemInfo_String(item, M.AUDITION, "", true)
+    end
+  end
+  reaper.SetEditCurPos(audition.cursor, false, false)
+  audition.items, audition.tracks, audition.muted, audition.srcs = {}, {}, {}, {}
+  reaper.PreventUIRefresh(-1)
+  reaper.TrackList_AdjustWindows(false)
+  reaper.UpdateArrange()
+end
+
+--[[  Plays `lists[j]` in the place of `srcs[j]`, for every source, from the
+      first one's bar. Returns OK, or NOTHING if no source is still there. ]]
+function M.auditionStart(srcs, lists)
+  M.auditionStop()
+  reaper.PreventUIRefresh(1)
+  local from, to = math.huge, -math.huge
+  for j, src in ipairs(srcs) do
+    if valid(src.item, "MediaItem*") and lists[j] then
+      local track = src.track
+      if reaper.GetMediaTrackInfo_Value(track, "I_FREEMODE") == 2 then
+        track = trackBelow(src)
+        audition.tracks[#audition.tracks + 1] = track
+      end
+      local item = M.create(src, lists[j], src.startQN, 0, track)
+      if item then
+        reaper.GetSetMediaItemInfo_String(item, M.AUDITION, "item", true)
+        audition.items[#audition.items + 1] = item
+        audition.srcs[#audition.items] = src
+        -- An item the user had muted stays muted afterwards.
+        if reaper.GetMediaItemInfo_Value(src.item, "B_MUTE") == 0 then
+          reaper.SetMediaItemInfo_Value(src.item, "B_MUTE", 1)
+          reaper.GetSetMediaItemInfo_String(src.item, M.AUDITION, "muted", true)
+          audition.muted[#audition.muted + 1] = src.item
+        end
+        from, to = math.min(from, src.originQN), math.max(to, src.startQN + src.lengthQN)
+      end
+    end
+  end
+  reaper.PreventUIRefresh(-1)
+  if not M.auditioning() then
+    for _, track in ipairs(audition.tracks) do reaper.DeleteTrack(track) end
+    audition.tracks = {}
+    return M.NOTHING
+  end
+  audition.cursor = reaper.GetCursorPosition()
+  audition.startAt = reaper.TimeMap2_QNToTime(0, from)
+  audition.stopAt = reaper.TimeMap2_QNToTime(0, to)
+  reaper.SetEditCurPos(audition.startAt, false, false)
+  reaper.OnPlayButton()
+  reaper.UpdateArrange()
+  return M.OK
+end
+
+-- Another variation into the items already playing, without stopping:
+-- stepping through a batch while it plays.
+function M.auditionSwap(lists)
+  for k, item in ipairs(audition.items) do
+    local src = audition.srcs[k]
+    if valid(item, "MediaItem*") and lists[k] then
+      writeNotes(reaper.GetActiveTake(item), src, lists[k], src.startQN)
+    end
+  end
+  reaper.UpdateArrange()
+end
+
+-- Called every frame. How far through the audition is, 0 to 1, or nil
+-- once it has stopped, for any reason.
+function M.auditionTick()
+  if not M.auditioning() then return nil end
+  if reaper.GetPlayState() & 1 == 0 then M.auditionStop(); return nil end
+  local at = reaper.GetPlayPosition()
+  if at >= audition.stopAt then M.auditionStop(); return nil end
+  local span = math.max(audition.stopAt - audition.startAt, 1e-9)
+  return math.max(0, math.min(1, (at - audition.startAt) / span))
+end
+
+-- Whatever a crash left behind: temporary items and tracks removed, muted
+-- originals unmuted.
+function M.sweep()
+  for t = reaper.CountTracks(0) - 1, 0, -1 do
+    local track = reaper.GetTrack(0, t)
+    local _, mark = reaper.GetSetMediaTrackInfo_String(track, M.AUDITION, "", false)
+    if mark == "track" then
+      reaper.DeleteTrack(track)
+    else
+      for i = reaper.CountTrackMediaItems(track) - 1, 0, -1 do
+        local item = reaper.GetTrackMediaItem(track, i)
+        local _, m = reaper.GetSetMediaItemInfo_String(item, M.AUDITION, "", false)
+        if m == "item" then
+          reaper.DeleteTrackMediaItem(track, item)
+        elseif m == "muted" then
+          reaper.SetMediaItemInfo_Value(item, "B_MUTE", 0)
+          reaper.GetSetMediaItemInfo_String(item, M.AUDITION, "", true)
+        end
+      end
+    end
+  end
 end
 
 return M

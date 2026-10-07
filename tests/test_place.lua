@@ -194,6 +194,57 @@ do
   same(P.notesOf(tr.items[2]), F.single, "and its notes land where they were in the item, not a bar late")
 end
 
+-- Items varied together are placed together: each the same distance
+-- after its own item, in a place free on every one of their tracks.
+P.reset()
+do
+  local a, b = P.track("Melody"), P.track("Chords")
+  local tune = P.item(a, 4, 16, F.twinkle, "Tune")       -- a bar after the chords
+  local chords = P.item(b, 0, 16, F.popChords, "Chords")
+  P.item(b, 20, 4, F.single, "In the way")                -- only on the chords' track
+  P.selected = { tune, chords }
+  local srcs = Place.read()
+  eq(srcs[1].name, "Chords", "set up: read in time order")
+  local at = Place.slotsTogether(srcs, 2)
+  -- The group runs 0-20: a step of 20 beats. At 20 the chords' track is
+  -- taken, so both move on to 40.
+  eq(at[1][1], 40, "a place taken on one track is skipped for both")
+  eq(at[2][1], 44, "and the tune keeps its bar after the chords")
+  eq(at[1][2], 60, "the next place")
+  eq(at[2][2], 64, "for both")
+  local result = Place.make({ { src = srcs[1], variations = { srcs[1].notes, srcs[1].notes }, at = at[1] },
+                              { src = srcs[2], variations = { srcs[2].notes, srcs[2].notes }, at = at[2] } })
+  eq(result, Place.OK, "made")
+  eq(P.posQN(b.items[#b.items]), 60, "where they were placed")
+  eq(P.posQN(a.items[#a.items]), 64, "both")
+  balanced("placed together")
+end
+
+-- Varying in place together: each group's items get their notes at once,
+-- the notes for each item its own.
+P.reset()
+do
+  local a, b = P.track("Melody"), P.track("Chords")
+  local t1, c1 = P.item(a, 0, 16, F.twinkle, "Tune"), P.item(b, 0, 16, F.popChords, "Chords")
+  local t2 = P.item(a, 32, 16, F.twinkle, "Tune")
+  P.selected = { t1, t2, c1 }
+  local calls = {}
+  local result, count = Place.varyGroupsInPlace(Place.selectedItems(), function(srcs, k)
+    calls[#calls + 1] = #srcs
+    local out = {}
+    for i, s in ipairs(srcs) do
+      out[i] = { { pitch = s.name == "Tune" and 72 or 48, start = s.lead, len = 1, vel = 100, chan = 0 } }
+    end
+    return out
+  end, true)
+  eq(result, Place.OK, "varied together in place")
+  eq(count, 3, "all three items")
+  eq(table.concat(calls, ","), "2,1", "as two groups: the tune and chords that overlap, and the tune alone")
+  eq(P.notesOf(t1)[1].pitch, 72, "each item gets its own notes: the tune")
+  eq(P.notesOf(c1)[1].pitch, 48, "and the chords")
+  balanced("varied in place together")
+end
+
 -- REAPER refusing to make an item: nothing left behind.
 P.reset()
 do
@@ -290,6 +341,115 @@ for _, case in ipairs({
   same(P.notesOf(twin), before, case[1] .. ": and the other copy is untouched")
   ok(new.ext.MidiVariator ~= nil, case[1] .. ": carrying its original")
   balanced(case[1])
+end
+
+------------------------------------------------------------------------------
+-- Hearing a variation first
+------------------------------------------------------------------------------
+
+-- On the original's own track, in its place, the original muted; stepping
+-- swaps the notes while it plays; stopping takes it all back.
+P.reset()
+do
+  local tr = P.track("Piano", { fx = 2 })
+  local item = P.item(tr, 6, 8, F.single, "Motif", { ccs = { { at = 0, m2 = 64, m3 = 127 } } })
+  local other = P.item(tr, 32, 4, F.single, "Already muted", { mute = true })
+  P.selected = { item, other }
+  P.cursor = 1.5
+  local srcs = Place.read()
+  local tracksBefore, undoBefore = #P.tracks, #P.undoNames
+  local variation = { { pitch = 64, start = srcs[1].lead, len = 2, vel = 90, chan = 0 } }
+  local muted = { { pitch = 67, start = srcs[2].lead, len = 1, vel = 90, chan = 0 } }
+  eq(Place.auditionStart(srcs, { variation, muted }), Place.OK, "audition starts")
+  ok(Place.auditioning(), "and is auditioning")
+  ok(P.playing, "REAPER plays")
+  eq(P.cursor * 2, 4, "from the bar the first item starts in")
+  eq(#P.tracks, tracksBefore, "on the original's own track: no new track")
+  eq(#tr.items, 4, "a temporary item for each")
+  local temp = tr.items[3]
+  eq(P.posQN(temp), 6, "in the original's place")
+  eq(P.notesOf(temp)[1].pitch, 64, "playing the variation")
+  eq(#temp.take.ccs, 1, "with the original's pedal")
+  eq(item.mute, 1, "the original is muted")
+  eq(item.ext.MidiVariatorAudition, "muted", "and marked, in case of a crash")
+  eq(#P.undoNames, undoBefore, "no undo history")
+  balanced("audition")
+
+  Place.auditionSwap({ { { pitch = 65, start = srcs[1].lead, len = 1, vel = 90, chan = 0 } }, muted })
+  eq(P.notesOf(temp)[1].pitch, 65, "a swap changes the notes while it plays")
+  ok(P.playing, "without stopping")
+
+  P.playPos = P.cursor + 1
+  local at = Place.auditionTick()
+  ok(at and at > 0 and at < 1, "the tick says how far through it is")
+  P.playPos = 1e9
+  eq(Place.auditionTick(), nil, "at the end it stops")
+  ok(not Place.auditioning(), "and is no longer auditioning")
+  ok(not P.playing, "REAPER stopped")
+  eq(#tr.items, 2, "the temporary items gone")
+  eq(item.mute, 0, "the original unmuted")
+  eq(item.ext.MidiVariatorAudition, "", "and unmarked")
+  eq(other.mute, 1, "an item muted before stays muted")
+  eq(P.cursor, 1.5, "the edit cursor back where it was")
+  balanced("audition stopped")
+
+  -- Stopped with REAPER's own transport.
+  Place.auditionStart(srcs, { variation, muted })
+  P.playing = false
+  eq(Place.auditionTick(), nil, "REAPER's stop stops it")
+  eq(#tr.items, 2, "and cleans up")
+  eq(item.mute, 0, "unmuted")
+end
+
+-- A track in fixed item lanes plays one lane: the variation goes on a
+-- temporary track with a copy of the FX instead.
+P.reset()
+do
+  local tr = P.track("Lanes", { fx = 3, freemode = 2 })
+  local after = P.track("After")
+  P.selected = { P.item(tr, 0, 4, F.single, "Motif") }
+  local srcs = Place.read()
+  Place.auditionStart(srcs, { { { pitch = 64, start = 0, len = 1, vel = 90, chan = 0 } } })
+  eq(#P.tracks, 3, "fixed lanes: a temporary track")
+  eq(P.tracks[2].name, Place.AUDITION_NAME, "straight under the original's")
+  eq(P.tracks[2].fx, 3, "with a copy of its FX")
+  eq(#tr.items, 1, "nothing added to the lanes")
+  Place.auditionStop()
+  eq(#P.tracks, 2, "stopping takes the track away")
+  ok(P.tracks[2] == after, "and only that track")
+end
+
+-- What a crash leaves behind is swept away when the script starts.
+P.reset()
+do
+  local tr = P.track("Piano")
+  local item = P.item(tr, 0, 4, F.single, "Motif")
+  P.selected = { item }
+  local lanes = P.track("Lanes", { freemode = 2 })
+  local laneItem = P.item(lanes, 0, 4, F.single, "Lane motif")
+  P.selected = { item, laneItem }
+  Place.auditionStart(Place.read(), { F.single, F.single })
+  -- The script dies here: nothing stops the audition.
+  Place.audition.items, Place.audition.tracks, Place.audition.muted = {}, {}, {}
+  eq(#P.tracks, 3, "set up: a temporary track left behind")
+  eq(item.mute, 1, "and a muted original")
+  Place.sweep()
+  eq(#P.tracks, 2, "swept: the temporary track")
+  eq(#tr.items, 1, "the temporary item")
+  eq(item.mute, 0, "the original unmuted")
+  eq(laneItem.mute, 0, "every one")
+end
+
+-- Nothing left to play: nothing starts.
+P.reset()
+do
+  local tr = P.track("Piano")
+  local item = P.item(tr, 0, 4, F.single, "Motif")
+  P.selected = { item }
+  local srcs = Place.read()
+  reaper.DeleteTrackMediaItem(tr, item)
+  eq(Place.auditionStart(srcs, { F.single }), Place.NOTHING, "a deleted source: nothing to play")
+  ok(not P.playing, "and REAPER does not play")
 end
 
 C.done()

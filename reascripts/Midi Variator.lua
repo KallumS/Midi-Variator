@@ -7,15 +7,18 @@
  *
  * About:          Import a .mid file (or play something in), select the item,
  *                 and run this. Choose how much may change and what, preview
- *                 the variations against the original, then make them after
- *                 it on the same track. Every variation keeps the original
- *                 inside it, so it can be varied again - from the original -
- *                 or put back.
+ *                 and audition the variations against the original, untick
+ *                 any change you don't like, then make them after it on the
+ *                 same track. Near 100% a stretch of the motif may be
+ *                 developed - inverted, reversed, sequenced. A melody and its
+ *                 chords on two tracks are varied together. Every variation
+ *                 keeps the original inside it, so it can be varied again -
+ *                 from the original - or put back.
  *
  *                 Needs ReaImGui, from the ReaTeam Extensions repository.
  * Author:         Kallum Shah
  * Links:          https://github.com/KallumS/Midi-Variator
- * Version:        1.2
+ * Version:        1.3
  * Provides:
  *   mv_theory.lua
  *   mv_vary.lua
@@ -88,6 +91,7 @@ local ROLL_BEAT = 0x1E2228FF
 -- variation - what would be different.
 local SOURCE_NOTE = 0x6D7581FF
 local DIM       = 0x8A919CFF
+local PLAYHEAD  = 0xDDE1E7FF   -- where the audition has got to, in the roll
 local WARN      = 0xD2483FFF
 
 -- Shifts a colour towards white or black, keeping its alpha byte.
@@ -109,13 +113,15 @@ end
 
 -- Preferences, kept between runs. What the source is belongs to the
 -- project, so it is not saved.
-local st = { amount = 35, focus = 1, keepEnds = 1, grow = 0, count = 4, own = 0, fit = 1, outside = 0 }
+local st = { amount = 35, focus = 1, keepEnds = 1, grow = 0, count = 4, own = 0, fit = 1, outside = 0,
+             develop = 1, form = 1, together = 1 }
 for _, k in ipairs(V.KINDS) do st[k.key] = 1 end
 for _, f in ipairs(V.FEELS) do st[f.key] = 1 end
 
 local LIMITS = { amount = { 0, 100 }, focus = { 1, #V.FOCUS }, keepEnds = { 0, 1 },
                  grow = { 0, 1 }, count = { 1, 16 }, own = { 0, 1 }, fit = { 0, 1 },
-                 outside = { 0, 1 } }
+                 outside = { 0, 1 }, develop = { 0, 1 }, form = { 1, #V.FORMS },
+                 together = { 0, 1 } }
 for _, k in ipairs(V.KINDS) do LIMITS[k.key] = { 0, 1 } end
 for _, f in ipairs(V.FEELS) do LIMITS[f.key] = { 0, 1 } end
 
@@ -129,6 +135,7 @@ local ui = {
   runs = nil,        -- for each source, the batch of variations previewed
   show = 1,          -- which variation of the batch the roll shows
   histories = {},    -- per original, what earlier batches changed
+  skips = {},        -- skips[j][i]: the changes unticked in source j's i-th variation
   dirty = false, status = "", warn = false,
 }
 
@@ -157,6 +164,7 @@ end
 
 local function newSeed()
   ui.seed = (math.floor(os.time()) * 7 + math.floor(os.clock() * 1000) + ui.seed * 31) % 2147483000 + 1
+  ui.skips = {}      -- unticked changes belong to the variations they were in
 end
 
 local function options()
@@ -166,15 +174,20 @@ local function options()
   o.keepEnds = st.keepEnds == 1
   o.grow = st.grow == 1
   o.outside = st.outside == 1
+  o.develop = st.develop == 1
+  o.form = st.form
   for _, k in ipairs(V.KINDS) do o[k.key] = st[k.key] == 1 end
   for _, f in ipairs(V.FEELS) do o[f.key] = st[f.key] == 1 end
   return o
 end
 
 -- Which earlier batches of this original changed what, so the next batch
--- spreads its changes. Keyed by the original itself.
-local function historyFor(src)
-  local key = V.encode(src.original, src.lengthQN, src.name, 0)
+-- spreads its changes. Keyed by the original itself - or, for items varied
+-- together, by all of theirs.
+local function historyFor(...)
+  local keys = {}
+  for i, src in ipairs({ ... }) do keys[i] = V.encode(src.original, src.lengthQN, src.name, 0) end
+  local key = table.concat(keys, "\n")
   ui.histories[key] = ui.histories[key] or {}
   return ui.histories[key]
 end
@@ -191,6 +204,7 @@ end
 ------------------------------------------------------------------------------
 
 local function load(quiet)
+  Place.auditionStop()   -- it was playing the last source's variation
   local srcs, why = Place.read()
   if not srcs then
     ui.srcs, ui.ans, ui.runs = nil, nil, nil
@@ -199,7 +213,7 @@ local function load(quiet)
     end
     return
   end
-  ui.srcs, ui.ans = srcs, {}
+  ui.srcs, ui.ans, ui.skips = srcs, {}, {}
   for j, src in ipairs(srcs) do ui.ans[j] = V.analyse(src, T) end
   -- A picked scale belongs to the music it was picked for, not to the user.
   ui.pick = nil
@@ -227,21 +241,66 @@ local function heardPick()
   return { root = k.root, scale = V.scaleIndex(T.SCALES[k.scale].name) }
 end
 
+-- Some of the sources sound together: there is something to vary as one.
+local function canGroup()
+  for _, grp in ipairs(ui.srcs and V.groups(ui.srcs) or {}) do if #grp > 1 then return true end end
+  return false
+end
+
+-- The sources as they are varied: in groups that sound together when Vary
+-- them together is on, else each alone.
+local function groupsNow()
+  if st.together == 1 then return V.groups(ui.srcs) end
+  local out = {}
+  for j = 1, #ui.srcs do out[j] = { j } end
+  return out
+end
+
+local function membersOf(grp)
+  local out = {}
+  for i, j in ipairs(grp) do out[i] = ui.srcs[j] end
+  return out
+end
+
 local function rebuild()
   ui.dirty = false
   ui.runs, ui.work, ui.prep = {}, {}, {}
   if not ui.srcs then return end
   local o, pk = options(), currentPick()
-  for j, src in ipairs(ui.srcs) do
-    ui.work[j], ui.prep[j] = V.prepare(src, T, pk)
-    ui.runs[j] = V.series(ui.work[j], ui.prep[j], o, ui.seed, st.count, T, j, copyOf(historyFor(src)))
-    -- Measured against the true original, so a pivot shows as the change it is.
-    for _, var in ipairs(ui.runs[j]) do var.like = V.likeness(src.notes, var.notes) end
+  ui.groups = groupsNow()
+  for _, grp in ipairs(ui.groups) do
+    local j0 = grp[1]
+    if #grp == 1 then
+      local src = ui.srcs[j0]
+      ui.work[j0], ui.prep[j0] = V.prepare(src, T, pk)
+      ui.runs[j0] = V.series(ui.work[j0], ui.prep[j0], o, ui.seed, st.count, T, j0, copyOf(historyFor(src)),
+                             ui.skips[j0])
+      -- Measured against the true original, so a pivot shows as the change it is.
+      for _, var in ipairs(ui.runs[j0]) do var.like = V.likeness(src.notes, var.notes) end
+    else
+      -- One piece: varied as one, each item given its own notes back. The
+      -- changes are listed once, with the group's first item.
+      local members = membersOf(grp)
+      local combined = V.combine(members)
+      local work, an = V.prepare(combined, T, pk)
+      local run = V.series(work, an, o, ui.seed, st.count, T, j0, copyOf(historyFor(table.unpack(members))),
+                           ui.skips[j0])
+      for i, j in ipairs(grp) do
+        ui.work[j], ui.prep[j], ui.runs[j] = ui.srcs[j], an, {}
+        for k, var in ipairs(run) do
+          local notes = V.split(var.notes, combined)[i]
+          ui.runs[j][k] = { notes = notes, home = var.home, echo = var.echo,
+                            changes = i == 1 and var.changes or {}, moves = i == 1 and var.moves or {},
+                            like = V.likeness(ui.srcs[j].notes, notes), together = #grp }
+        end
+      end
+    end
   end
   if ui.show > st.count then ui.show = 1 end
 end
 
-local function touched() ui.dirty = true end
+-- A setting changed: a new batch, so nothing in it is unticked yet.
+local function touched() ui.dirty = true; ui.skips = {} end
 
 local function hasChords()
   for _, an in ipairs(ui.ans or {}) do
@@ -250,9 +309,20 @@ local function hasChords()
   return false
 end
 
+-- Chords played one note at a time: Chord quality changes them too.
+local function hasArpeggios()
+  for _, an in ipairs(ui.ans or {}) do if #an.broken > 0 then return true end end
+  return false
+end
+
 local function allDrums()
   for _, an in ipairs(ui.ans or {}) do if not an.drums then return false end end
   return true
+end
+
+-- Develop can happen: high enough on the slider, and something with pitches.
+local function canDevelop()
+  return st.amount > V.DEVELOP_FROM * 100 + 1e-9 and not allDrums()
 end
 
 local function sourcesAlive()
@@ -264,24 +334,39 @@ end
 
 local function plural(n, word) return ("%d %s%s"):format(n, word, n == 1 and "" or "s") end
 
+-- The notes the roll shows, one list per source: what an audition plays.
+local function shownLists()
+  local out = {}
+  for j in ipairs(ui.srcs) do out[j] = ui.runs[j][ui.show].notes end
+  return out
+end
+
 local function makeThem()
+  Place.auditionStop()
   if not sourcesAlive() then
     load(true)
     say("The item has gone - select it and press Use selected items.", true)
     return
   end
   local jobs = {}
-  for j, src in ipairs(ui.work) do
-    local lists = {}
-    for i, var in ipairs(ui.runs[j]) do lists[i] = var.notes end
-    -- The working copy carries the TRUE original: that is what is kept.
-    jobs[j] = { src = src, variations = lists, first = Place.nextIndex(src) }
+  for _, grp in ipairs(ui.groups) do
+    -- Items varied together go to places worked out together.
+    local at = #grp > 1 and Place.slotsTogether(membersOf(grp), st.count)
+    for i, j in ipairs(grp) do
+      local src = ui.work[j]
+      local lists = {}
+      for k, var in ipairs(ui.runs[j]) do lists[k] = var.notes end
+      -- The working copy carries the TRUE original: that is what is kept.
+      jobs[#jobs + 1] = { src = src, variations = lists, first = Place.nextIndex(src), at = at and at[i] }
+    end
     -- What this batch changed steers the next one.
-    local h = historyFor(src)
-    for _, var in ipairs(ui.runs[j]) do
+    local h = historyFor(table.unpack(membersOf(grp)))
+    for _, var in ipairs(ui.runs[grp[1]]) do
       for _, c in ipairs(var.moves) do
-        h["@" .. c.event] = (h["@" .. c.event] or 0) + 1
-        h[c.move .. "@" .. c.event] = (h[c.move .. "@" .. c.event] or 0) + 1
+        if not c.skipped and not var.echo then
+          h["@" .. c.event] = (h["@" .. c.event] or 0) + 1
+          h[c.move .. "@" .. c.event] = (h[c.move .. "@" .. c.event] or 0) + 1
+        end
       end
     end
   end
@@ -297,12 +382,19 @@ local function makeThem()
 end
 
 local function varySelected()
+  Place.auditionStop()
   local o, pk = options(), currentPick()
   local items = Place.selectedItems()
-  local result, count = Place.varyInPlace(items, function(src, k)
-    local work, an = V.prepare(src, T, pk)
-    return V.vary(work, an, o, V.seedFor(ui.seed, k, 97), T, historyFor(src)).notes
-  end)
+  local result, count = Place.varyGroupsInPlace(items, function(srcs, k)
+    if #srcs == 1 then
+      local work, an = V.prepare(srcs[1], T, pk)
+      return { V.vary(work, an, o, V.seedFor(ui.seed, k, 97), T, historyFor(srcs[1])).notes }
+    end
+    local combined = V.combine(srcs)
+    local work, an = V.prepare(combined, T, pk)
+    local var = V.vary(work, an, o, V.seedFor(ui.seed, k, 97), T, historyFor(table.unpack(srcs)))
+    return V.split(var.notes, combined)
+  end, st.together == 1)
   newSeed()
   if result ~= Place.OK then say("Select the MIDI items to vary first.", true); return end
   -- Re-read replaced sources first: reading clears the status line.
@@ -312,6 +404,7 @@ local function varySelected()
 end
 
 local function restoreSelected()
+  Place.auditionStop()
   local result, count = Place.restore(Place.selectedItems())
   if result ~= Place.OK then say("None of the selected items is a variation.", true); return end
   if not sourcesAlive() then load(true) end
@@ -386,7 +479,7 @@ end
 -- The roll
 ------------------------------------------------------------------------------
 
-local function pianoRoll(layers, beats, barBeats, width, height)
+local function pianoRoll(layers, beats, barBeats, width, height, playhead)
   local dl = ImGui.GetWindowDrawList(ctx)
   local x, y = ImGui.GetCursorScreenPos(ctx)
   ImGui.InvisibleButton(ctx, "##roll", width, height)
@@ -419,6 +512,10 @@ local function pianoRoll(layers, beats, barBeats, width, height)
       ImGui.DrawList_AddRectFilled(dl, nx, ny, nx + nw, ny + math.max(2, rowh - 1), layer[2], 1)
     end
   end
+  if playhead then
+    local px = x + width * playhead
+    ImGui.DrawList_AddLine(dl, px, y, px, y + height, PLAYHEAD, 1)
+  end
 end
 
 -- Every source's notes on one timeline, from the first one's bar line.
@@ -447,6 +544,17 @@ local function drawSource()
   if not ui.srcs then
     dim("Import a .mid file onto a track, select the item it makes, and press the button.")
     return
+  end
+  -- Only when some of them sound at the same time.
+  if canGroup() then
+    ImGui.SameLine(ctx)
+    switch("together", "Vary them together",
+           "The items that sound at the same time - a melody on one track and its\n" ..
+           "chords on another - are varied as one piece: a changed melody note\n" ..
+           "never grinds against the chords, a changed chord never against the\n" ..
+           "tune, the key is heard from all of them, and each variation of one\n" ..
+           "lines up with the same variation of the others.\n" ..
+           "Off: each item is varied on its own.", 170)
   end
   for j, src in ipairs(ui.srcs) do
     if j > 4 then dim(("and %d more"):format(#ui.srcs - 4)); break end
@@ -549,6 +657,8 @@ local function drawScale()
   end
 end
 
+local MAX_LINES = 10   -- changes listed for one variation
+
 local AMOUNT_WORDS = { { 0, "none - exact copies" }, { 1, "a whisper" }, { 21, "subtle" },
                        { 46, "noticeable" }, { 71, "bold, still recognisable" } }
 
@@ -569,6 +679,7 @@ local function drawChanges()
     local about = math.max(1, math.floor(want + 0.5))
     words = ("%s - about %s in %d notes"):format(words, plural(about, "change"), #ui.srcs[1].notes)
   end
+  if canDevelop() and st.develop == 1 then words = words .. ", and now and then a stretch developed" end
   dim(words)
 
   local hints = {
@@ -583,7 +694,8 @@ local function drawChanges()
     quality = "A chord changed to a neighbouring quality, read by ScaleView Pro:\n" ..
               "C to Cmaj7, C6 or Cadd9; G7 to G9, G13, G11 or G7b9; Cmin to Cmin7\n" ..
               "or Cdim; a sus chord, or one resolved. The bass stays where it is,\n" ..
-              "and a chord struck several times in a row changes every time.",
+              "and a chord struck several times in a row changes every time.\n" ..
+              "Arpeggiated chords too: C G E G can become C G E B (Cmaj7).",
     timing = "Each moment a few milliseconds early or late, as a player would be.",
     velocity = "A little louder or softer, with a gentle swell across the phrase.",
     lengths = "Notes held a touch longer or shorter.",
@@ -592,8 +704,10 @@ local function drawChanges()
   label("Changes")
   local first = true
   for _, k in ipairs(V.KINDS) do
-    local chordy = k.key == "chords" or k.key == "quality"
-    local shown = not ((chordy and not hasChords()) or (k.key == "notes" and allDrums()))
+    -- Voicing needs chords struck together; quality takes arpeggios too.
+    local shown = not ((k.key == "chords" and not hasChords())
+                    or (k.key == "quality" and not hasChords() and not hasArpeggios())
+                    or (k.key == "notes" and allDrums()))
     if shown then
       if not first then ImGui.SameLine(ctx) end
       switch(k.key, k.name, hints[k.key])
@@ -602,7 +716,7 @@ local function drawChanges()
   end
 
   -- Only while Chord quality is on and there are chords for it to change.
-  if st.quality == 1 and hasChords() then
+  if st.quality == 1 and (hasChords() or hasArpeggios()) then
     ImGui.Dummy(ctx, 1, 1)
     ImGui.SameLine(ctx, LABEL_W)
     local c, v = ImGui.Checkbox(ctx, "Chord changes may leave the scale", st.outside == 1)
@@ -611,6 +725,19 @@ local function drawChanges()
         "in C major, G7 can become G9 or G13, C can become Cmaj7 or C6.\n" ..
         "On: it may borrow notes from outside - C can become Cmin or Caug,\n" ..
         "G7 can become G7b9, Amin can become Adim.")
+  end
+
+  -- Only near the top of the slider, where it can happen, and not for drums.
+  if canDevelop() then
+    ImGui.Dummy(ctx, 1, 1)
+    ImGui.SameLine(ctx, LABEL_W)
+    switch("develop", "Develop the motif",
+           "Near 100%, now and then a variation takes a stretch of the music - a\n" ..
+           "bar or two, or at 100% most of it - and develops it the way a composer\n" ..
+           "brings a motif back: turned upside down, played in reverse order, moved\n" ..
+           "up or down the scale (a sequence), its intervals widened or narrowed, or\n" ..
+           "its first half repeated a step lower. The rhythm stays, so it is still\n" ..
+           "recognisable, and the first and last notes stay when kept.")
   end
 
   label("Feel")
@@ -649,6 +776,21 @@ local function drawVariations()
   if c2 then st.grow = grow and 1 or 0; touched() end
   tip("The first variations change less and the last the full amount, so a\n" ..
       "repeated motif builds. Each is still made from the original.")
+
+  -- The form: what comes after the original, A. Only with something to
+  -- arrange.
+  if st.count > 1 then
+    label("Form")
+    for i, f in ipairs(V.FORMS) do
+      if i > 1 then ImGui.SameLine(ctx) end
+      ImGui.PushID(ctx, "form" .. i)
+      if pick(f.name, st.form == i, 0) then st.form = i; touched() end
+      ImGui.PopID(ctx)
+      tip(f.hint .. "\nAfter the original: " .. V.formLetters(i, st.count))
+    end
+    ImGui.SameLine(ctx, 0, 14)
+    dim("A  " .. V.formLetters(st.form, st.count))
+  end
   -- Anything changed above, this frame or in step 2, is previewed now.
   if ui.dirty then rebuild() end
 
@@ -670,28 +812,77 @@ local function drawVariations()
     total = total + #ui.srcs[j].notes
   end
   ImGui.SameLine(ctx, 0, 16)
-  dim(("keeps %d%% of the original's notes as they were"):format(math.floor(100 * like / math.max(total, 1) + 0.5)))
+  local now = shown[1]
+  if now.home then
+    dim("the original again, played afresh")
+  elseif now.echo then
+    dim(("an echo of variation %d: the same changes, played afresh"):format(now.echo))
+  else
+    dim(("keeps %d%% of the original's notes as they were"):format(math.floor(100 * like / math.max(total, 1) + 0.5)))
+  end
   ImGui.SameLine(ctx, 0, 16)
   if pick("New set", false, 90) then newSeed(); touched() end
   tip("Another set of variations with the same settings.")
+  ImGui.SameLine(ctx)
+  local playing = Place.auditioning()
+  if pick(playing and "Stop" or "Audition", playing, 90) then
+    if playing then Place.auditionStop()
+    else
+      if ui.dirty then rebuild() end
+      if Place.auditionStart(ui.srcs, shownLists()) ~= Place.OK then
+        say("The item has gone - select it and press Use selected items.", true)
+      end
+      ui.heard = { runs = ui.runs, show = ui.show }
+    end
+  end
+  tip("Plays this variation in the original's place, with the rest of the\n" ..
+      "project, from the bar it starts in; the original is silent meanwhile.\n" ..
+      "Step through the batch with < and > while it plays to hear the others.\n" ..
+      "Nothing is added to the project or the undo history.")
+  -- Stepped, or changed, while it plays: the new one comes straight in.
+  if Place.auditioning() and ui.heard and (ui.heard.runs ~= ui.runs or ui.heard.show ~= ui.show) then
+    Place.auditionSwap(shownLists())
+    ui.heard = { runs = ui.runs, show = ui.show }
+  end
 
   local w = select(1, ImGui.GetContentRegionAvail(ctx))
   local orig, beats = together(function(j) return ui.srcs[j].notes end)
   local var = together(function(j) return shown[j].notes end)
-  pianoRoll({ { orig, SOURCE_NOTE }, { var, SELECTED } }, beats, ui.srcs[1].barBeats, math.max(160, w), 110)
+  pianoRoll({ { orig, SOURCE_NOTE }, { var, SELECTED } }, beats, ui.srcs[1].barBeats, math.max(160, w), 110,
+            ui.playhead)
 
+  -- The changes, each with a box: untick one to leave it out of this
+  -- variation - the others stay exactly as they are.
   local lines = {}
-  for j, var in ipairs(shown) do
-    for _, c in ipairs(var.changes) do
-      lines[#lines + 1] = (#ui.srcs > 1 and ("\"" .. ui.srcs[j].name .. "\"  ") or "") .. c
+  for _, grp in ipairs(ui.groups) do
+    local j = grp[1]
+    local names = {}
+    for i, m in ipairs(grp) do names[i] = "\"" .. ui.srcs[m].name .. "\"" end
+    for _, c in ipairs(shown[j].moves) do
+      lines[#lines + 1] = { j = j, c = c,
+        text = (#ui.srcs > 1 and (table.concat(names, " + ") .. "  ") or "") .. c.text }
     end
   end
   if #lines == 0 then
-    dim(st.amount == 0 and "No changes to the notes." or "Only the feel changes in this one.")
+    dim(st.amount == 0 and "No changes to the notes."
+        or now.home and "No changes: the original, with only the feel new."
+        or "Only the feel changes in this one.")
   end
   for i, line in ipairs(lines) do
-    if i > 6 then dim(("and %d more"):format(#lines - 6)); break end
-    dim(line)
+    if i > MAX_LINES then dim(("and %d more"):format(#lines - MAX_LINES)); break end
+    local c = line.c
+    local changed, on = ImGui.Checkbox(ctx, ("%s##change%d.%d"):format(line.text, line.j, c.id), not c.skipped)
+    if changed then
+      ui.skips[line.j] = ui.skips[line.j] or {}
+      local per = ui.skips[line.j]
+      -- An echo's boxes are the ones of the variation it echoes.
+      local at = shown[line.j].echo or ui.show
+      per[at] = per[at] or {}
+      per[at][c.id] = (not on) or nil
+      ui.dirty = true    -- not touched(): that would forget the other boxes
+    end
+    tip("Untick to leave this change out of this variation. Every other\n" ..
+        "change, and the feel, stays exactly as it is.")
   end
 
   ImGui.Dummy(ctx, 0, 4)
@@ -728,6 +919,7 @@ end
 
 local function frame()
   stepNo = 0
+  ui.playhead = Place.auditionTick()   -- and stops it at the end
   if ui.dirty then rebuild() end
 
   drawSource()
@@ -773,6 +965,7 @@ local function loop()
 end
 
 local function shutdown()
+  Place.auditionStop()
   saveState()
   if sectionID then
     reaper.SetToggleCommandState(sectionID, cmdID, 0)
@@ -790,6 +983,7 @@ local function main()
   reaper.atexit(shutdown)
   if reaper.set_action_options then reaper.set_action_options(1) end
   ctx = ImGui.CreateContext(TITLE)
+  Place.sweep()   -- anything an audition left behind when REAPER or the script died
   load(true)
   reaper.defer(loop)
 end
