@@ -153,7 +153,8 @@ end
 local function noteEnd(n) return n.start + n.len end
 
 local function copyNote(n)
-  return { pitch = n.pitch, start = n.start, len = n.len, vel = n.vel or 100, chan = n.chan or 0 }
+  -- `part`: which item of several varied together (M.combine) it is from.
+  return { pitch = n.pitch, start = n.start, len = n.len, vel = n.vel or 100, chan = n.chan or 0, part = n.part }
 end
 
 function M.copyNotes(notes)
@@ -480,7 +481,7 @@ function M.fit(notes, scale, from)
   table.sort(out, byStart)
   local last, keep = {}, {}
   for _, n in ipairs(out) do
-    local k = n.chan * 128 + n.pitch
+    local k = (n.part or 0) * 2048 + n.chan * 128 + n.pitch
     local p = last[k]
     if p and (p.fitted or n.fitted) and noteEnd(p) > n.start + 1e-9 then
       if math.abs(p.start - n.start) < 1e-9 then
@@ -495,7 +496,7 @@ function M.fit(notes, scale, from)
   end
   for _, n in ipairs(out) do
     if not n.dead then
-      keep[#keep + 1] = { pitch = n.pitch, start = n.start, len = n.len, vel = n.vel, chan = n.chan }
+      keep[#keep + 1] = { pitch = n.pitch, start = n.start, len = n.len, vel = n.vel, chan = n.chan, part = n.part }
     end
   end
   local list = {}
@@ -666,6 +667,18 @@ local function add(v, n)
   n.added = true
   v.notes[#v.notes + 1] = n
   return n
+end
+
+-- The part of the note nearest `q` in pitch, the bass aside: a note added
+-- to a chord joins the item that plays the chord, not a bass on its own
+-- track (unless the bass is all there is).
+local function nearestPart(notes, q)
+  local lowest, best
+  for _, n in ipairs(notes) do if not lowest or n.pitch < lowest.pitch then lowest = n end end
+  for _, n in ipairs(notes) do
+    if n ~= lowest and (not best or math.abs(n.pitch - q) < math.abs(best.pitch - q)) then best = n end
+  end
+  return (best or lowest) and (best or lowest).part
 end
 
 local function live(e)
@@ -973,6 +986,7 @@ function MOVES.fill(v)
   for _, n in ipairs(e.notes) do vel = vel + n.vel end
   local fn = copyNote(e.bass)
   fn.pitch, fn.len = q, len
+  fn.part = nearestPart(e.notes, q)
   fn.vel = math.floor(vel / #e.notes * 0.85 + 0.5)
   add(v, fn)
   v.touched[e] = true
@@ -1348,6 +1362,7 @@ function MOVES.quality(v)
           for _, q in ipairs(p.adds) do
             local an = copyNote(ev.bass)
             an.pitch, an.len = q, lens[(#lens + 1) // 2]
+            an.part = nearestPart(ev.notes, q)
             an.vel = math.floor(vel / #ev.notes * 0.85 + 0.5)
             add(v, an)
           end
@@ -2120,14 +2135,16 @@ local function tidy(v)
   local out, same = {}, {}
   for _, n in ipairs(v.notes) do
     if not n.gone then
-      local s = math.max(n.start, v.src.lead)
-      local e = math.min(noteEnd(n), v.src.beats)
+      -- Inside its own item, when several are varied together.
+      local edge = v.src.parts and v.src.parts[n.part or 1] or v.src
+      local s = math.max(n.start, edge.lead)
+      local e = math.min(noteEnd(n), edge.beats)
       if e - s >= M.MIN_LEN - 1e-9 then
         local t = {
           pitch = math.max(0, math.min(127, math.floor(n.pitch + 0.5))),
           start = s, len = e - s,
           vel = math.max(1, math.min(127, math.floor(n.vel + 0.5))),
-          chan = n.chan or 0,
+          chan = n.chan or 0, part = n.part,
         }
         local o = n.orig
         same[t] = o and o.pitch == t.pitch and o.start == t.start and o.len == t.len
@@ -2138,7 +2155,7 @@ local function tidy(v)
   table.sort(out, byStart)
   local lastOf, keep = {}, {}
   for _, n in ipairs(out) do
-    local k = n.chan * 128 + n.pitch
+    local k = (n.part or 0) * 2048 + n.chan * 128 + n.pitch
     local prev = lastOf[k]
     if prev and noteEnd(prev) > n.start + 1e-9 and not (same[prev] and same[n]) then
       prev.len = n.start - prev.start
@@ -2432,6 +2449,71 @@ function M.likeness(original, variation)
     end
   end
   return kept / #original
+end
+
+------------------------------------------------------------------------------
+-- Varying several items as one piece
+--
+-- A melody on one track and its chords on another, selected together, are
+-- one piece of music: a changed melody note must not grind against the
+-- chords, a changed chord must not grind against the tune, and the key is
+-- heard from both. So the items that overlap in time are put on one
+-- timeline (`combine`), each note remembering its part, varied as one, and
+-- given back to their items (`split`).
+------------------------------------------------------------------------------
+
+-- Items that sound together, in groups: each source joins the group of
+-- the one before it if they overlap in time and share a metre. `srcs` are
+-- sorted by start, as mv_place reads them, and carry startQN and lengthQN.
+-- Returns { { 1, 2 }, { 3 }, ... } - indices into srcs.
+function M.groups(srcs)
+  local out, last, finish = {}, nil, -math.huge
+  for j, s in ipairs(srcs) do
+    local first = last and srcs[last[1]]
+    if last and s.startQN < finish - 1e-6 and s.barBeats == first.barBeats and s.pulse == first.pulse then
+      last[#last + 1] = j
+    else
+      last = { j }
+      out[#out + 1] = last
+      finish = -math.huge
+    end
+    finish = math.max(finish, s.startQN + s.lengthQN)
+  end
+  return out
+end
+
+--[[  The sources of a group on one timeline, from the earliest bar line.
+      Each note carries `part` (its source's place in `srcs`); `parts[k]`
+      keeps each source's own edges and how far it was moved, for tidy and
+      split. The result is a source like any other. ]]
+function M.combine(srcs)
+  local base = math.huge
+  for _, s in ipairs(srcs) do base = math.min(base, s.originQN) end
+  local out = { notes = {}, parts = {}, lead = math.huge, beats = -math.huge,
+                barBeats = srcs[1].barBeats, pulse = srcs[1].pulse, num = srcs[1].num, den = srcs[1].den }
+  for k, s in ipairs(srcs) do
+    local shift = s.originQN - base
+    out.parts[k] = { lead = s.lead + shift, beats = s.beats + shift, shift = shift }
+    out.lead, out.beats = math.min(out.lead, s.lead + shift), math.max(out.beats, s.beats + shift)
+    for _, n in ipairs(s.notes) do
+      out.notes[#out.notes + 1] = { pitch = n.pitch, start = n.start + shift, len = n.len,
+                                    vel = n.vel, chan = n.chan, part = k }
+    end
+  end
+  return out
+end
+
+-- A variation of a combined source, given back to its parts: a list of
+-- note lists, each on its own source's timeline.
+function M.split(notes, combined)
+  local out = {}
+  for k = 1, #combined.parts do out[k] = {} end
+  for _, n in ipairs(notes) do
+    local p = combined.parts[n.part or 1]
+    table.insert(out[n.part or 1], { pitch = n.pitch, start = n.start - p.shift, len = n.len,
+                                     vel = n.vel, chan = n.chan })
+  end
+  return out
 end
 
 ------------------------------------------------------------------------------

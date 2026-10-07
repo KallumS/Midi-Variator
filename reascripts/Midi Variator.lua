@@ -110,13 +110,14 @@ end
 -- Preferences, kept between runs. What the source is belongs to the
 -- project, so it is not saved.
 local st = { amount = 35, focus = 1, keepEnds = 1, grow = 0, count = 4, own = 0, fit = 1, outside = 0,
-             develop = 1, form = 1 }
+             develop = 1, form = 1, together = 1 }
 for _, k in ipairs(V.KINDS) do st[k.key] = 1 end
 for _, f in ipairs(V.FEELS) do st[f.key] = 1 end
 
 local LIMITS = { amount = { 0, 100 }, focus = { 1, #V.FOCUS }, keepEnds = { 0, 1 },
                  grow = { 0, 1 }, count = { 1, 16 }, own = { 0, 1 }, fit = { 0, 1 },
-                 outside = { 0, 1 }, develop = { 0, 1 }, form = { 1, #V.FORMS } }
+                 outside = { 0, 1 }, develop = { 0, 1 }, form = { 1, #V.FORMS },
+                 together = { 0, 1 } }
 for _, k in ipairs(V.KINDS) do LIMITS[k.key] = { 0, 1 } end
 for _, f in ipairs(V.FEELS) do LIMITS[f.key] = { 0, 1 } end
 
@@ -177,9 +178,12 @@ local function options()
 end
 
 -- Which earlier batches of this original changed what, so the next batch
--- spreads its changes. Keyed by the original itself.
-local function historyFor(src)
-  local key = V.encode(src.original, src.lengthQN, src.name, 0)
+-- spreads its changes. Keyed by the original itself - or, for items varied
+-- together, by all of theirs.
+local function historyFor(...)
+  local keys = {}
+  for i, src in ipairs({ ... }) do keys[i] = V.encode(src.original, src.lengthQN, src.name, 0) end
+  local key = table.concat(keys, "\n")
   ui.histories[key] = ui.histories[key] or {}
   return ui.histories[key]
 end
@@ -232,17 +236,60 @@ local function heardPick()
   return { root = k.root, scale = V.scaleIndex(T.SCALES[k.scale].name) }
 end
 
+-- Some of the sources sound together: there is something to vary as one.
+local function canGroup()
+  for _, grp in ipairs(ui.srcs and V.groups(ui.srcs) or {}) do if #grp > 1 then return true end end
+  return false
+end
+
+-- The sources as they are varied: in groups that sound together when Vary
+-- them together is on, else each alone.
+local function groupsNow()
+  if st.together == 1 then return V.groups(ui.srcs) end
+  local out = {}
+  for j = 1, #ui.srcs do out[j] = { j } end
+  return out
+end
+
+local function membersOf(grp)
+  local out = {}
+  for i, j in ipairs(grp) do out[i] = ui.srcs[j] end
+  return out
+end
+
 local function rebuild()
   ui.dirty = false
   ui.runs, ui.work, ui.prep = {}, {}, {}
   if not ui.srcs then return end
   local o, pk = options(), currentPick()
-  for j, src in ipairs(ui.srcs) do
-    ui.work[j], ui.prep[j] = V.prepare(src, T, pk)
-    ui.runs[j] = V.series(ui.work[j], ui.prep[j], o, ui.seed, st.count, T, j, copyOf(historyFor(src)),
-                          ui.skips[j])
-    -- Measured against the true original, so a pivot shows as the change it is.
-    for _, var in ipairs(ui.runs[j]) do var.like = V.likeness(src.notes, var.notes) end
+  ui.groups = groupsNow()
+  for _, grp in ipairs(ui.groups) do
+    local j0 = grp[1]
+    if #grp == 1 then
+      local src = ui.srcs[j0]
+      ui.work[j0], ui.prep[j0] = V.prepare(src, T, pk)
+      ui.runs[j0] = V.series(ui.work[j0], ui.prep[j0], o, ui.seed, st.count, T, j0, copyOf(historyFor(src)),
+                             ui.skips[j0])
+      -- Measured against the true original, so a pivot shows as the change it is.
+      for _, var in ipairs(ui.runs[j0]) do var.like = V.likeness(src.notes, var.notes) end
+    else
+      -- One piece: varied as one, each item given its own notes back. The
+      -- changes are listed once, with the group's first item.
+      local members = membersOf(grp)
+      local combined = V.combine(members)
+      local work, an = V.prepare(combined, T, pk)
+      local run = V.series(work, an, o, ui.seed, st.count, T, j0, copyOf(historyFor(table.unpack(members))),
+                           ui.skips[j0])
+      for i, j in ipairs(grp) do
+        ui.work[j], ui.prep[j], ui.runs[j] = ui.srcs[j], an, {}
+        for k, var in ipairs(run) do
+          local notes = V.split(var.notes, combined)[i]
+          ui.runs[j][k] = { notes = notes, home = var.home, echo = var.echo,
+                            changes = i == 1 and var.changes or {}, moves = i == 1 and var.moves or {},
+                            like = V.likeness(ui.srcs[j].notes, notes), together = #grp }
+        end
+      end
+    end
   end
   if ui.show > st.count then ui.show = 1 end
 end
@@ -289,14 +336,19 @@ local function makeThem()
     return
   end
   local jobs = {}
-  for j, src in ipairs(ui.work) do
-    local lists = {}
-    for i, var in ipairs(ui.runs[j]) do lists[i] = var.notes end
-    -- The working copy carries the TRUE original: that is what is kept.
-    jobs[j] = { src = src, variations = lists, first = Place.nextIndex(src) }
+  for _, grp in ipairs(ui.groups) do
+    -- Items varied together go to places worked out together.
+    local at = #grp > 1 and Place.slotsTogether(membersOf(grp), st.count)
+    for i, j in ipairs(grp) do
+      local src = ui.work[j]
+      local lists = {}
+      for k, var in ipairs(ui.runs[j]) do lists[k] = var.notes end
+      -- The working copy carries the TRUE original: that is what is kept.
+      jobs[#jobs + 1] = { src = src, variations = lists, first = Place.nextIndex(src), at = at and at[i] }
+    end
     -- What this batch changed steers the next one.
-    local h = historyFor(src)
-    for _, var in ipairs(ui.runs[j]) do
+    local h = historyFor(table.unpack(membersOf(grp)))
+    for _, var in ipairs(ui.runs[grp[1]]) do
       for _, c in ipairs(var.moves) do
         if not c.skipped and not var.echo then
           h["@" .. c.event] = (h["@" .. c.event] or 0) + 1
@@ -319,10 +371,16 @@ end
 local function varySelected()
   local o, pk = options(), currentPick()
   local items = Place.selectedItems()
-  local result, count = Place.varyInPlace(items, function(src, k)
-    local work, an = V.prepare(src, T, pk)
-    return V.vary(work, an, o, V.seedFor(ui.seed, k, 97), T, historyFor(src)).notes
-  end)
+  local result, count = Place.varyGroupsInPlace(items, function(srcs, k)
+    if #srcs == 1 then
+      local work, an = V.prepare(srcs[1], T, pk)
+      return { V.vary(work, an, o, V.seedFor(ui.seed, k, 97), T, historyFor(srcs[1])).notes }
+    end
+    local combined = V.combine(srcs)
+    local work, an = V.prepare(combined, T, pk)
+    local var = V.vary(work, an, o, V.seedFor(ui.seed, k, 97), T, historyFor(table.unpack(srcs)))
+    return V.split(var.notes, combined)
+  end, st.together == 1)
   newSeed()
   if result ~= Place.OK then say("Select the MIDI items to vary first.", true); return end
   -- Re-read replaced sources first: reading clears the status line.
@@ -467,6 +525,17 @@ local function drawSource()
   if not ui.srcs then
     dim("Import a .mid file onto a track, select the item it makes, and press the button.")
     return
+  end
+  -- Only when some of them sound at the same time.
+  if canGroup() then
+    ImGui.SameLine(ctx)
+    switch("together", "Vary them together",
+           "The items that sound at the same time - a melody on one track and its\n" ..
+           "chords on another - are varied as one piece: a changed melody note\n" ..
+           "never grinds against the chords, a changed chord never against the\n" ..
+           "tune, the key is heard from all of them, and each variation of one\n" ..
+           "lines up with the same variation of the others.\n" ..
+           "Off: each item is varied on its own.", 170)
   end
   for j, src in ipairs(ui.srcs) do
     if j > 4 then dim(("and %d more"):format(#ui.srcs - 4)); break end
@@ -744,10 +813,13 @@ local function drawVariations()
   -- The changes, each with a box: untick one to leave it out of this
   -- variation - the others stay exactly as they are.
   local lines = {}
-  for j, var in ipairs(shown) do
-    for _, c in ipairs(var.moves) do
+  for _, grp in ipairs(ui.groups) do
+    local j = grp[1]
+    local names = {}
+    for i, m in ipairs(grp) do names[i] = "\"" .. ui.srcs[m].name .. "\"" end
+    for _, c in ipairs(shown[j].moves) do
       lines[#lines + 1] = { j = j, c = c,
-        text = (#ui.srcs > 1 and ("\"" .. ui.srcs[j].name .. "\"  ") or "") .. c.text }
+        text = (#ui.srcs > 1 and (table.concat(names, " + ") .. "  ") or "") .. c.text }
     end
   end
   if #lines == 0 then

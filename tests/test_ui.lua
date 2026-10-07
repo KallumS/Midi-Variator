@@ -18,6 +18,8 @@ local P = dofile(HERE .. "/reaper_mock.lua")
 local F = dofile(HERE .. "/fixtures.lua")
 local T = dofile(C.SCRIPTS .. "mv_theory.lua")
 local V = dofile(C.SCRIPTS .. "mv_vary.lua")
+local Place = dofile(C.SCRIPTS .. "mv_place.lua")   -- to read items as the script does
+Place.use(V)
 local SCRIPT = C.SCRIPTS .. "Midi Variator.lua"
 
 ------------------------------------------------------------------------------
@@ -573,19 +575,87 @@ do
   ok(not has(g.buttons, "Develop the motif"), "drums are never developed: no switch")
 end
 
--- Two items at once, on two tracks: each varied on its own.
+-- Two items at once, on two tracks, sounding together: varied as one
+-- piece (Vary them together, on by default), each variation of the tune
+-- over the same variation of the chords - exactly as previewed.
 do
   P.reset()
+  P.ext = {}
   local a = P.track("Melody")
   local b = P.track("Chords")
   P.selected = { P.item(a, 0, 16, F.twinkle, "Tune"), P.item(b, 0, 16, F.popChords, "Harmony") }
+  P.item(b, 16, 4, F.single, "In the way")   -- only on the chords' track
   start()
   frame()
   ok(has(g.texts, "\"Tune\"") and has(g.texts, "\"Harmony\""), "both sources listed")
+  ok(has(g.buttons, "Vary them together"), "items that sound together can be varied together")
+  eq(g.ink[buttonIndex("Vary them together")].bg, 0xFFF200FF, "on by default")
+  local srcs = Place.read()
+  local combined = V.combine(srcs)
+  local o = V.defaults(); o.amount = 0.35
+  local seed = (1000 * 7 + 0 + 1 * 31) % 2147483000 + 1
+  local run = V.series(combined, V.analyse(combined, T), o, seed, 4, T, 1, {})
+  local listed = false
+  for _, l in ipairs(g.checkboxes) do
+    if l:find("\"" .. srcs[1].name .. "\" + \"" .. srcs[2].name .. "\"", 1, true) then listed = true end
+  end
+  ok(listed, "the changes are listed once, for both")
   click("Make 4 variations")
   eq(#a.items, 5, "the melody's variations on the melody's track")
-  eq(#b.items, 5, "the chords' on the chords' track")
-  eq(P.posQN(a.items[2]), P.posQN(b.items[2]), "lined up with each other")
+  eq(#b.items, 6, "the chords' on the chords' track")
+  local function sorted(tr)
+    local out = {}
+    for _, it in ipairs(tr.items) do if it.take.name:find("variation") then out[#out + 1] = it end end
+    table.sort(out, function(x, y) return P.posQN(x) < P.posQN(y) end)
+    return out
+  end
+  local va, vb = sorted(a), sorted(b)
+  eq(P.posQN(va[1]), 32, "the place taken on the chords' track is skipped for the tune too")
+  for i = 1, 4 do
+    local parts = V.split(run[i].notes, combined)
+    local ta = srcs[1].track == a and 1 or 2
+    eq(notesOfItem(va[i]), notesOfList(parts[ta]), ("together: the tune's variation %d as previewed"):format(i))
+    eq(notesOfItem(vb[i]), notesOfList(parts[3 - ta]), ("and the chords' %d"):format(i))
+    eq(P.posQN(va[i]), P.posQN(vb[i]), "lined up with each other")
+  end
+  -- Varied in place together.
+  P.selected = { va[1], vb[1] }
+  click("Vary selected in place")
+  ok(has(g.texts, "Varied 2 items in place"), "varied in place together")
+
+  -- Off: each on its own, as before.
+  P.selected = { a.items[1], b.items[1] }
+  click("Use selected items")
+  click("Vary them together")
+  eq(g.ink[buttonIndex("Vary them together")].bg, 0xA9AFBAFF, "switched off")
+  srcs = Place.read()
+  -- Make and Vary selected in place each drew a new seed.
+  local function nextSeed(x) return (1000 * 7 + 0 + x * 31) % 2147483000 + 1 end
+  local alone = V.series(srcs[1], V.analyse(srcs[1], T), o, nextSeed(nextSeed(seed)), 4, T, 1, {})
+  local had = {}
+  for _, it in ipairs(srcs[1].track.items) do had[it] = true end
+  click("Make 4 variations")
+  local firstNew
+  for _, it in ipairs(srcs[1].track.items) do
+    if not had[it] and (not firstNew or P.posQN(it) < P.posQN(firstNew)) then firstNew = it end
+  end
+  eq(notesOfItem(firstNew), notesOfList(alone[1].notes), "off: each varied on its own")
+  atexitFn()
+  ok(P.ext["MidiVariator:state"]:find("together=0"), "and that is remembered")
+end
+
+-- Items that do not sound together: no switch.
+do
+  P.reset()
+  local a = P.track("Melody")
+  P.selected = { P.item(a, 0, 16, F.twinkle, "One"), P.item(a, 32, 16, F.twinkle, "Two") }
+  start()
+  frame()
+  ok(not has(g.buttons, "Vary them together"), "items apart in time: nothing to vary together")
+  project("noir", "Noir")
+  start()
+  frame()
+  ok(not has(g.buttons, "Vary them together"), "nor one item alone")
 end
 
 -- A collapsed window still pops its theme.
@@ -788,6 +858,11 @@ local STATES = {
   { "own notes", function() project("twinkle", "Twinkle") end,
     function() click("Stay in the original's notes") end },
   { "arpeggios", function() project("arpeggios", "Arps") end },
+  { "a tune and its chords", function()
+      P.reset()
+      local a, b = P.track("Melody"), P.track("Chords")
+      P.selected = { P.item(a, 0, 16, F.twinkle, "Tune"), P.item(b, 0, 16, F.popChords, "Harmony") }
+    end },
   { "a melody at 100%", function() project("noir", "Noir") end,
     function() slide("##amount", 100) end },
 }
@@ -824,7 +899,7 @@ for _, name in ipairs({ "Use selected items", "Notes", "Rhythm", "Add notes", "L
                         "<", ">", "New set", "Make 4 variations", "Vary selected in place",
                         "Put back the original", "Stay in the original's notes", "Back to what it heard",
                         "Db", "B", "Major", "Minor Pentatonic", "Diminished Half-Whole",
-                        "Develop the motif", "All new", "Home between", "In pairs", "A refrain" }) do
+                        "Develop the motif", "Vary them together", "All new", "Home between", "In pairs", "A refrain" }) do
   ok(reached[name], "the sweep reached '" .. name .. "'")
 end
 

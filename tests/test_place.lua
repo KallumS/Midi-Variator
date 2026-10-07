@@ -194,6 +194,57 @@ do
   same(P.notesOf(tr.items[2]), F.single, "and its notes land where they were in the item, not a bar late")
 end
 
+-- Items varied together are placed together: each the same distance
+-- after its own item, in a place free on every one of their tracks.
+P.reset()
+do
+  local a, b = P.track("Melody"), P.track("Chords")
+  local tune = P.item(a, 4, 16, F.twinkle, "Tune")       -- a bar after the chords
+  local chords = P.item(b, 0, 16, F.popChords, "Chords")
+  P.item(b, 20, 4, F.single, "In the way")                -- only on the chords' track
+  P.selected = { tune, chords }
+  local srcs = Place.read()
+  eq(srcs[1].name, "Chords", "set up: read in time order")
+  local at = Place.slotsTogether(srcs, 2)
+  -- The group runs 0-20: a step of 20 beats. At 20 the chords' track is
+  -- taken, so both move on to 40.
+  eq(at[1][1], 40, "a place taken on one track is skipped for both")
+  eq(at[2][1], 44, "and the tune keeps its bar after the chords")
+  eq(at[1][2], 60, "the next place")
+  eq(at[2][2], 64, "for both")
+  local result = Place.make({ { src = srcs[1], variations = { srcs[1].notes, srcs[1].notes }, at = at[1] },
+                              { src = srcs[2], variations = { srcs[2].notes, srcs[2].notes }, at = at[2] } })
+  eq(result, Place.OK, "made")
+  eq(P.posQN(b.items[#b.items]), 60, "where they were placed")
+  eq(P.posQN(a.items[#a.items]), 64, "both")
+  balanced("placed together")
+end
+
+-- Varying in place together: each group's items get their notes at once,
+-- the notes for each item its own.
+P.reset()
+do
+  local a, b = P.track("Melody"), P.track("Chords")
+  local t1, c1 = P.item(a, 0, 16, F.twinkle, "Tune"), P.item(b, 0, 16, F.popChords, "Chords")
+  local t2 = P.item(a, 32, 16, F.twinkle, "Tune")
+  P.selected = { t1, t2, c1 }
+  local calls = {}
+  local result, count = Place.varyGroupsInPlace(Place.selectedItems(), function(srcs, k)
+    calls[#calls + 1] = #srcs
+    local out = {}
+    for i, s in ipairs(srcs) do
+      out[i] = { { pitch = s.name == "Tune" and 72 or 48, start = s.lead, len = 1, vel = 100, chan = 0 } }
+    end
+    return out
+  end, true)
+  eq(result, Place.OK, "varied together in place")
+  eq(count, 3, "all three items")
+  eq(table.concat(calls, ","), "2,1", "as two groups: the tune and chords that overlap, and the tune alone")
+  eq(P.notesOf(t1)[1].pitch, 72, "each item gets its own notes: the tune")
+  eq(P.notesOf(c1)[1].pitch, 48, "and the chords")
+  balanced("varied in place together")
+end
+
 -- REAPER refusing to make an item: nothing left behind.
 P.reset()
 do

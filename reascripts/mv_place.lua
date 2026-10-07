@@ -233,6 +233,54 @@ function M.slots(src, count)
   return out
 end
 
+--[[  Where the variations of several items varied together go: each the
+      same distance after its own item, so the melody's third variation
+      plays over the chords' third. The step is the whole group's length
+      rounded up to whole bars; a place is used only if every item's slot
+      in it is free on its own track. Returns at[k] = positions for srcs[k]. ]]
+function M.slotsTogether(srcs, count)
+  local first, finish = math.huge, -math.huge
+  for _, s in ipairs(srcs) do
+    first = math.min(first, s.startQN)
+    finish = math.max(finish, s.startQN + s.lengthQN)
+  end
+  local bb = srcs[1].barBeats
+  local step = math.max(1, math.ceil((finish - first) / bb - 1e-6)) * bb
+  local taken = {}   -- per track, what is already there
+  for _, s in ipairs(srcs) do
+    if not taken[s.track] then
+      taken[s.track] = {}
+      for i = 0, reaper.CountTrackMediaItems(s.track) - 1 do
+        local it = reaper.GetTrackMediaItem(s.track, i)
+        local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
+        local l = reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
+        table.insert(taken[s.track], { reaper.TimeMap2_timeToQN(0, p), reaper.TimeMap2_timeToQN(0, p + l) })
+      end
+    end
+  end
+  local at = {}
+  for k = 1, #srcs do at[k] = {} end
+  local j = 1
+  while #at[1] < count and j < count + 10000 do
+    local free = true
+    for _, s in ipairs(srcs) do
+      local a, b = s.startQN + j * step, s.startQN + j * step + s.lengthQN
+      for _, t in ipairs(taken[s.track]) do
+        if t[1] < b - 1e-6 and t[2] > a + 1e-6 then free = false; break end
+      end
+    end
+    if free then
+      for k, s in ipairs(srcs) do
+        local a = s.startQN + j * step
+        at[k][#at[k] + 1] = a
+        table.insert(taken[s.track], { a, a + s.lengthQN })
+      end
+    end
+    j = j + 1
+  end
+  return at
+end
+
 -- The number the next variation of `src` gets: one more than the highest
 -- among the variations of the same original already on its track.
 function M.nextIndex(src)
@@ -314,7 +362,8 @@ function M.make(jobs)
   reaper.PreventUIRefresh(1)
   local made = {}
   for _, job in ipairs(jobs) do
-    local at = M.slots(job.src, #job.variations)
+    -- (Items varied together come with their places worked out together.)
+    local at = job.at or M.slots(job.src, #job.variations)
     for i, notes in ipairs(job.variations) do
       local item = at[i] and M.create(job.src, notes, at[i], (job.first or 1) + i - 1)
       if not item then
@@ -363,14 +412,36 @@ end
 --[[  Each item in `items` rewritten with `notesFor(src, k)` - a new
       variation of its original, in place. One undo step. ]]
 function M.varyInPlace(items, notesFor)
+  return M.varyGroupsInPlace(items, function(srcs, k) return { notesFor(srcs[1], k) } end, false)
+end
+
+--[[  The same, with the items that sound together varied as one piece
+      (when `together`): `notesFor(srcs, k)` gets a group's sources and
+      returns a note list for each. Every item is read before any is
+      rewritten, and each rewrite replaces only its own item. ]]
+function M.varyGroupsInPlace(items, notesFor, together)
   if #items == 0 then return M.NO_ITEM, 0 end
   reaper.Undo_BeginBlock()
   reaper.PreventUIRefresh(1)
-  local out = {}
-  for k, item in ipairs(items) do
+  local srcs = {}
+  for _, item in ipairs(items) do
     local src = M.readItem(item)
-    if src and #src.notes > 0 then
-      local it = M.rewrite(src, notesFor(src, k))
+    if src and #src.notes > 0 then srcs[#srcs + 1] = src end
+  end
+  local groups = {}
+  if together then
+    table.sort(srcs, function(a, b) return a.startQN < b.startQN end)
+    groups = V.groups(srcs)
+  else
+    for j = 1, #srcs do groups[j] = { j } end
+  end
+  local out = {}
+  for k, grp in ipairs(groups) do
+    local members = {}
+    for i, j in ipairs(grp) do members[i] = srcs[j] end
+    local lists = notesFor(members, k)
+    for i, src in ipairs(members) do
+      local it = M.rewrite(src, lists[i])
       if it then out[#out + 1] = it end
     end
   end

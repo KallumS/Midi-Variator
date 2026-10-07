@@ -1050,6 +1050,130 @@ do
 end
 
 ------------------------------------------------------------------------------
+-- Several items varied as one piece
+------------------------------------------------------------------------------
+
+-- A source as mv_place reads one: at bar `bar` of the project.
+local function placed(notes, bar, extra)
+  local s = source(notes)
+  s.originQN, s.startQN, s.lengthQN = bar * 4, bar * 4, s.beats
+  for k, x in pairs(extra or {}) do s[k] = x end
+  return s
+end
+
+do
+  local a, b = placed(F.twinkle, 0), placed(F.popChords, 0)
+  local c = placed(F.noir, 8)
+  local d = placed(F.riff, 9)
+  local e = placed(F.drums, 20, { barBeats = 3 })
+  local f = placed(F.run, 21)
+  local g = V.groups({ a, b, c, d, e, f })
+  local function show(gs)
+    local out = {}
+    for _, grp in ipairs(gs) do out[#out + 1] = table.concat(grp, "+") end
+    return table.concat(out, " ")
+  end
+  eq(show(g), "1+2 3+4 5 6", "items that sound together are grouped; a different metre is not")
+
+  -- Combined and split again, nothing changes.
+  local tune, chords = placed(F.twinkle, 1), placed(F.popChords, 0)
+  local both = V.combine({ tune, chords })
+  eq(both.parts[1].shift, 4, "the tune a bar later than the chords")
+  eq(both.lead, 0, "the piece starts where the first does")
+  local back = V.split(V.copyNotes(both.notes), both)
+  eq(fingerprint(V.copyNotes(back[1])), fingerprint(V.copyNotes(tune.notes)), "split: the tune back as it was")
+  eq(fingerprint(V.copyNotes(back[2])), fingerprint(V.copyNotes(chords.notes)), "and the chords")
+end
+
+-- A tune and its chords, on two tracks. Varied apart, a changed tune note
+-- can grind against a chord it cannot see; varied together, never.
+do
+  local tune, chords = placed(F.twinkle, 0), placed(F.popChords, 0)
+  local function keyOf(n) return ("%d@%.4f"):format(n.pitch, n.start) end
+  local both = V.combine({ tune, chords })
+  local an = V.analyse(both, T)
+  local origHarsh = harshTime(both.notes)
+  local apart, together = 0, 0
+  for seed = 1, 60 do
+    for _, amount in ipairs({ 0.5, 1 }) do
+      local o = feelOff(opts({ amount = amount, develop = true }))
+      -- Together.
+      local var = V.vary(both, an, o, seed, T)
+      local quality = false
+      for _, c in ipairs(var.moves) do if c.kind == "quality" then quality = true end end
+      if harshTime(var.notes, quality) > origHarsh + 1.01 then together = together + 1 end
+      local parts = V.split(var.notes, both)
+      for k, p in ipairs(parts) do
+        local src = ({ tune, chords })[k]
+        for _, n in ipairs(p) do
+          ok(n.start >= src.lead - 1e-9 and n.start + n.len <= src.beats + 1e-9, "each part inside its own item")
+        end
+      end
+      -- Apart.
+      local vt = V.vary(tune, V.analyse(tune, T), o, seed, T)
+      local vc = V.vary(chords, V.analyse(chords, T), o, seed, T)
+      local all = {}
+      for _, n in ipairs(vt.notes) do all[#all + 1] = n end
+      for _, n in ipairs(vc.notes) do all[#all + 1] = n end
+      local q2 = false
+      for _, c in ipairs(vc.moves) do if c.kind == "quality" then q2 = true end end
+      if harshTime(all, q2) > origHarsh + 1.01 then apart = apart + 1 end
+    end
+  end
+  eq(together, 0, "varied together, the tune never grinds against the chords")
+  ok(apart > 0, ("varied apart, it sometimes does (%d of 120)"):format(apart))
+end
+
+-- Items that start in different places: every note made stays inside its
+-- own item - a grace note or pickup before the tune's first note, in time
+-- the chords already fill, is not left hanging before the tune's item.
+do
+  local tune, chords = placed(F.twinkle, 1), placed(F.popChords, 0)
+  local both = V.combine({ tune, chords })
+  local an = V.analyse(both, T)
+  for seed = 1, 150 do
+    local o = opts({ amount = 1, keepEnds = false })
+    local var = V.vary(both, an, o, seed, T)
+    for _, n in ipairs(var.notes) do
+    end
+    local parts = V.split(var.notes, both)
+    local bad
+    for k, p in ipairs(parts) do
+      local src = ({ tune, chords })[k]
+      for _, n in ipairs(p) do
+        if n.start < src.lead - 1e-9 or n.start + n.len > src.beats + 1e-9 then bad = k end
+      end
+    end
+    if not ok(not bad, "seed " .. seed .. ": every note inside its own item (" .. tostring(bad) .. ")") then break end
+  end
+end
+
+-- A note added to a chord joins the part nearest it in pitch: a bass on a
+-- track of its own gets no chord notes.
+do
+  local melody, harmony, bass = {}, {}, {}
+  for b, ch in ipairs({ { 60, 64, 67 }, { 59, 62, 67 }, { 57, 60, 64 }, { 57, 60, 65 } }) do
+    for _, p in ipairs(ch) do harmony[#harmony + 1] = { pitch = p, start = (b - 1) * 4, len = 4, vel = 90 } end
+    bass[#bass + 1] = { pitch = ({ 36, 43, 45, 41 })[b], start = (b - 1) * 4, len = 4, vel = 100 }
+  end
+  for i, p in ipairs({ 72, 74, 76, 74, 74, 72, 71, 72, 72, 71, 69, 71, 69, 71, 72, 72 }) do
+    melody[#melody + 1] = { pitch = p, start = i - 1, len = 1, vel = 100 }
+  end
+  local srcs = { placed(melody, 0), placed(harmony, 0), placed(bass, 0) }
+  local all = V.combine(srcs)
+  local an = V.analyse(all, T)
+  local added = 0
+  for seed = 1, 60 do
+    local o = feelOff(opts({ amount = 1 }))
+    for _, k in ipairs(V.KINDS) do o[k.key] = (k.key == "quality" or k.key == "add") end
+    local parts = V.split(V.vary(all, an, o, seed, T).notes, all)
+    if not eq(#parts[3], #bass, "seed " .. seed .. ": the bass part gets no chord notes") then break end
+    added = added + #parts[2] - #harmony
+  end
+  ok(added > 0, "the chords part does (" .. added .. ")")
+end
+
+------------------------------------------------------------------------------
 -- Developing the motif (near 100%)
 ------------------------------------------------------------------------------
 
