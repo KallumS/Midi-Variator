@@ -962,6 +962,94 @@ do
 end
 
 ------------------------------------------------------------------------------
+-- Forms: motif memory
+------------------------------------------------------------------------------
+
+do
+  local function formIndex(name)
+    for i, f in ipairs(V.FORMS) do if f.name == name then return i end end
+  end
+  eq(V.formLetters(formIndex("All new"), 4), "A' A'' A''' A(4)", "All new: a new one every time")
+  eq(V.formLetters(formIndex("Home between"), 4), "A' A A'' A", "Home between: A' A A'' A")
+  eq(V.formLetters(formIndex("In pairs"), 4), "A' A' A'' A''", "In pairs: A' A' A'' A''")
+  eq(V.formLetters(formIndex("A refrain"), 6), "A' A'' A' A''' A' A(4)", "A refrain: A' keeps coming back")
+
+  local src = source(F.noir)
+  local an = V.analyse(src, T)
+  local orig = fingerprint(V.copyNotes(src.notes))
+  for seed = 1, 10 do
+    local tag = "noir seed " .. seed
+    local plain = V.series(src, an, feelOff(opts({ amount = 0.6 })), seed, 6, T)
+
+    -- Home between: the original exactly, where it comes home (feel off).
+    local home = V.series(src, an, feelOff(opts({ amount = 0.6, form = formIndex("Home between") })), seed, 6, T)
+    for i = 2, 6, 2 do
+      ok(home[i].home, tag .. ": place " .. i .. " is home")
+      eq(fingerprint(home[i].notes), orig, tag .. ": home is the original")
+      eq(#home[i].changes, 0, tag .. ": with no changes")
+    end
+    eq(fingerprint(home[1].notes), fingerprint(plain[1].notes), tag .. ": the first is the same as All new's")
+    ok(fingerprint(home[3].notes) ~= orig, tag .. ": and the third is a variation")
+
+    -- In pairs: each echoed, the same notes with the feel off.
+    local pairs_ = V.series(src, an, feelOff(opts({ amount = 0.6, form = formIndex("In pairs") })), seed, 6, T)
+    for i = 2, 6, 2 do
+      eq(pairs_[i].echo, i - 1, tag .. ": place " .. i .. " echoes the one before")
+      eq(fingerprint(pairs_[i].notes), fingerprint(pairs_[i - 1].notes), tag .. ": the same notes")
+    end
+    ok(fingerprint(pairs_[3].notes) ~= fingerprint(pairs_[1].notes), tag .. ": and a new pair is new")
+
+    -- A refrain: the first comes back at 3 and 5.
+    local refrain = V.series(src, an, feelOff(opts({ amount = 0.6, form = formIndex("A refrain") })), seed, 6, T)
+    eq(fingerprint(refrain[3].notes), fingerprint(refrain[1].notes), tag .. ": the refrain at 3")
+    eq(fingerprint(refrain[5].notes), fingerprint(refrain[1].notes), tag .. ": and at 5")
+    ok(fingerprint(refrain[4].notes) ~= fingerprint(refrain[2].notes), tag .. ": with new ones between")
+  end
+
+  -- With the feel on, an echo is played afresh: the same changes and
+  -- pitches, a feel of its own.
+  local differ = 0
+  for seed = 1, 10 do
+    local run = V.series(src, an, opts({ amount = 0.6, form = formIndex("In pairs") }), seed, 2, T)
+    eq(table.concat(run[2].changes, "|"), table.concat(run[1].changes, "|"), "an echo has the same changes")
+    local same = #run[1].notes == #run[2].notes
+    for i, n in ipairs(run[1].notes) do
+      if same and run[2].notes[i].pitch ~= n.pitch then same = false end
+      if run[2].notes[i] and run[2].notes[i].vel ~= n.vel then differ = differ + 1 end
+    end
+    ok(same, "and the same pitches")
+  end
+  ok(differ > 0, "but its own feel")
+
+  -- Home, with the feel on, is the original's notes played afresh.
+  local run = V.series(src, an, opts({ amount = 0.6, form = formIndex("Home between") }), 3, 2, T)
+  eq(V.likeness(src.notes, run[2].notes), 1, "home keeps every note of the original")
+
+  -- An echo follows what was unticked in the one it echoes.
+  local o = feelOff(opts({ amount = 0.6, form = formIndex("In pairs") }))
+  local full = V.series(src, an, o, 4, 2, T)
+  local less = V.series(src, an, o, 4, 2, T, nil, nil, { [1] = { [full[1].moves[1].id] = true } })
+  eq(#less[1].changes, #full[1].changes - 1, "unticked in the first of a pair")
+  eq(fingerprint(less[2].notes), fingerprint(less[1].notes), "and so in its echo")
+
+  -- Only the first statements steer the series' memory: a pair series of
+  -- four leaves it exactly as the two first statements alone would.
+  local h1, h2 = {}, {}
+  local o2 = opts({ amount = 0.6, form = formIndex("In pairs") })
+  V.series(src, an, o2, 4, 4, T, nil, h1)
+  V.vary(src, an, o2, V.seedFor(4, 0), T, h2)
+  V.vary(src, an, o2, V.seedFor(4, 2), T, h2)
+  local function flat(h)
+    local ks = {}
+    for k, x in pairs(h) do ks[#ks + 1] = k .. "=" .. x end
+    table.sort(ks)
+    return table.concat(ks, " ")
+  end
+  eq(flat(h1), flat(h2), "an echo adds nothing to the memory")
+  ok(next(h1) ~= nil, "set up: the memory has something in it")
+end
+
+------------------------------------------------------------------------------
 -- Developing the motif (near 100%)
 ------------------------------------------------------------------------------
 

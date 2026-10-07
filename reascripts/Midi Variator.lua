@@ -110,13 +110,13 @@ end
 -- Preferences, kept between runs. What the source is belongs to the
 -- project, so it is not saved.
 local st = { amount = 35, focus = 1, keepEnds = 1, grow = 0, count = 4, own = 0, fit = 1, outside = 0,
-             develop = 1 }
+             develop = 1, form = 1 }
 for _, k in ipairs(V.KINDS) do st[k.key] = 1 end
 for _, f in ipairs(V.FEELS) do st[f.key] = 1 end
 
 local LIMITS = { amount = { 0, 100 }, focus = { 1, #V.FOCUS }, keepEnds = { 0, 1 },
                  grow = { 0, 1 }, count = { 1, 16 }, own = { 0, 1 }, fit = { 0, 1 },
-                 outside = { 0, 1 }, develop = { 0, 1 } }
+                 outside = { 0, 1 }, develop = { 0, 1 }, form = { 1, #V.FORMS } }
 for _, k in ipairs(V.KINDS) do LIMITS[k.key] = { 0, 1 } end
 for _, f in ipairs(V.FEELS) do LIMITS[f.key] = { 0, 1 } end
 
@@ -170,6 +170,7 @@ local function options()
   o.grow = st.grow == 1
   o.outside = st.outside == 1
   o.develop = st.develop == 1
+  o.form = st.form
   for _, k in ipairs(V.KINDS) do o[k.key] = st[k.key] == 1 end
   for _, f in ipairs(V.FEELS) do o[f.key] = st[f.key] == 1 end
   return o
@@ -297,7 +298,7 @@ local function makeThem()
     local h = historyFor(src)
     for _, var in ipairs(ui.runs[j]) do
       for _, c in ipairs(var.moves) do
-        if not c.skipped then
+        if not c.skipped and not var.echo then
           h["@" .. c.event] = (h["@" .. c.event] or 0) + 1
           h[c.move .. "@" .. c.event] = (h[c.move .. "@" .. c.event] or 0) + 1
         end
@@ -687,6 +688,21 @@ local function drawVariations()
   if c2 then st.grow = grow and 1 or 0; touched() end
   tip("The first variations change less and the last the full amount, so a\n" ..
       "repeated motif builds. Each is still made from the original.")
+
+  -- The form: what comes after the original, A. Only with something to
+  -- arrange.
+  if st.count > 1 then
+    label("Form")
+    for i, f in ipairs(V.FORMS) do
+      if i > 1 then ImGui.SameLine(ctx) end
+      ImGui.PushID(ctx, "form" .. i)
+      if pick(f.name, st.form == i, 0) then st.form = i; touched() end
+      ImGui.PopID(ctx)
+      tip(f.hint .. "\nAfter the original: " .. V.formLetters(i, st.count))
+    end
+    ImGui.SameLine(ctx, 0, 14)
+    dim("A  " .. V.formLetters(st.form, st.count))
+  end
   -- Anything changed above, this frame or in step 2, is previewed now.
   if ui.dirty then rebuild() end
 
@@ -708,7 +724,14 @@ local function drawVariations()
     total = total + #ui.srcs[j].notes
   end
   ImGui.SameLine(ctx, 0, 16)
-  dim(("keeps %d%% of the original's notes as they were"):format(math.floor(100 * like / math.max(total, 1) + 0.5)))
+  local now = shown[1]
+  if now.home then
+    dim("the original again, played afresh")
+  elseif now.echo then
+    dim(("an echo of variation %d: the same changes, played afresh"):format(now.echo))
+  else
+    dim(("keeps %d%% of the original's notes as they were"):format(math.floor(100 * like / math.max(total, 1) + 0.5)))
+  end
   ImGui.SameLine(ctx, 0, 16)
   if pick("New set", false, 90) then newSeed(); touched() end
   tip("Another set of variations with the same settings.")
@@ -728,7 +751,9 @@ local function drawVariations()
     end
   end
   if #lines == 0 then
-    dim(st.amount == 0 and "No changes to the notes." or "Only the feel changes in this one.")
+    dim(st.amount == 0 and "No changes to the notes."
+        or now.home and "No changes: the original, with only the feel new."
+        or "Only the feel changes in this one.")
   end
   for i, line in ipairs(lines) do
     if i > MAX_LINES then dim(("and %d more"):format(#lines - MAX_LINES)); break end
@@ -737,8 +762,10 @@ local function drawVariations()
     if changed then
       ui.skips[line.j] = ui.skips[line.j] or {}
       local per = ui.skips[line.j]
-      per[ui.show] = per[ui.show] or {}
-      per[ui.show][c.id] = (not on) or nil
+      -- An echo's boxes are the ones of the variation it echoes.
+      local at = shown[line.j].echo or ui.show
+      per[at] = per[at] or {}
+      per[at][c.id] = (not on) or nil
       ui.dirty = true    -- not touched(): that would forget the other boxes
     end
     tip("Untick to leave this change out of this variation. Every other\n" ..

@@ -2252,6 +2252,8 @@ function M.vary(src, an, opts, seed, T, history)
   local records = {}
   local goal = 0
   if want > 0 then goal = math.min(cap, math.max(1, math.floor(want + r()))) end
+  -- Home: the original again, played afresh - no changes, only the feel.
+  if opts.home then goal = 0 end
 
   local kinds, kindWeights = {}, {}
   for _, k in ipairs(M.KINDS) do
@@ -2321,6 +2323,8 @@ function M.vary(src, an, opts, seed, T, history)
     end
   end
 
+  -- An echo plays the same changes with a feel of its own.
+  if opts.feelSeed then v.r = M.random(opts.feelSeed) end
   applyFeel(v, math.sqrt(amount))
   local notes = tidy(v)
   table.sort(changes, function(a, b) return a.at < b.at end)
@@ -2329,23 +2333,80 @@ function M.vary(src, an, opts, seed, T, history)
   return { notes = notes, changes = texts, moves = changes }
 end
 
+--[[  Forms: what a batch plays after the original, A.
+
+      A motif that keeps coming back does not have to come back different
+      every time. A form says, for each place in the batch, which
+      variation plays there: 0 is home - the original again, played
+      afresh, only its feel new - and 1, 2, 3... are the batch's own
+      variations, A', A'', A'''. A number that has played before is an
+      echo: the same changes, with a feel of its own. ]]
+M.FORMS = {
+  { name = "All new",      hint = "A new variation every time.",
+    slot = function(i) return i end },
+  { name = "Home between", hint = "The original comes back between the variations, played afresh.",
+    slot = function(i) return i % 2 == 0 and 0 or (i + 1) // 2 end },
+  { name = "In pairs",     hint = "Each variation stated, then echoed: the same changes, played afresh.",
+    slot = function(i) return (i + 1) // 2 end },
+  { name = "A refrain",    hint = "The first variation keeps coming back between new ones.",
+    slot = function(i) return i % 2 == 1 and 1 or i // 2 + 1 end },
+}
+
+-- "A' A A'' A": the letters a form gives `count` places.
+function M.formLetters(form, count)
+  local f = M.FORMS[form] or M.FORMS[1]
+  local out = {}
+  for i = 1, count do
+    local k = f.slot(i)
+    out[i] = k == 0 and "A" or (k <= 3 and ("A" .. ("'"):rep(k)) or ("A(" .. k .. ")"))
+  end
+  return table.concat(out, " ")
+end
+
 --[[  A run of variations, each made from the original - never from the one
       before it. With `grow`, the first ones are gentler and the last one
       gets the full amount, so a repeated motif can build. `history` may be
       passed in to carry on from an earlier batch of the same original.
-      `skips[i]`, if given, is the set of changes unticked in the i-th. ]]
+      `opts.form` picks a form (M.FORMS; All new when nil). `skips[i]`, if
+      given, is the set of changes unticked in the i-th; an echo follows
+      the place it echoes, so its own entry is never read.
+
+      Each one carries `home` (it is the original again) or `echo` (the
+      place it echoes), for the window. ]]
 function M.series(src, an, opts, baseSeed, count, T, j, history, skips)
   local out = {}
   history = history or {}
+  local form = M.FORMS[opts.form or 1] or M.FORMS[1]
+  local first = {}   -- variation number -> the place it first played
+  -- The memory as each first statement found it, so an echo draws the
+  -- same dice (a copy each time: an echo adds nothing to it).
+  local memoryAt = {}
+  local function copy(h) local c = {}; for k, x in pairs(h) do c[k] = x end; return c end
+  local function optsAt(i, extra)
+    local o = {}
+    for k, x in pairs(opts) do o[k] = x end
+    if opts.grow and count > 1 then o.amount = opts.amount * (0.4 + 0.6 * (i - 1) / (count - 1)) end
+    for k, x in pairs(extra or {}) do o[k] = x end
+    return o
+  end
   for i = 1, count do
-    local o = opts
-    if (opts.grow and count > 1) or (skips and skips[i]) then
-      o = {}
-      for k, x in pairs(opts) do o[k] = x end
-      if opts.grow and count > 1 then o.amount = opts.amount * (0.4 + 0.6 * (i - 1) / (count - 1)) end
-      o.skip = skips and skips[i]
+    local k = form.slot(i)
+    local seed = M.seedFor(baseSeed, i - 1, j)
+    if k == 0 then
+      out[i] = M.vary(src, an, optsAt(i, { home = true }), seed, T)
+      out[i].home = true
+    elseif first[k] then
+      -- An echo: the place it echoes, its seed and its unticked changes,
+      -- and only the feel its own.
+      local f = first[k]
+      out[i] = M.vary(src, an, optsAt(f, { skip = skips and skips[f], feelSeed = seed + 1 }),
+                      M.seedFor(baseSeed, f - 1, j), T, copy(memoryAt[f]))
+      out[i].echo = f
+    else
+      first[k] = i
+      memoryAt[i] = copy(history)
+      out[i] = M.vary(src, an, optsAt(i, { skip = skips and skips[i] }), seed, T, history)
     end
-    out[i] = M.vary(src, an, o, M.seedFor(baseSeed, i - 1, j), T, history)
   end
   return out
 end

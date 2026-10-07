@@ -408,6 +408,63 @@ ok(has(g.texts, "drums"), "drums are recognised")
 ok(not has(g.buttons, "Notes"), "and get no Notes switch: a drum has no pitch to bend")
 checkInk("drums")
 
+-- Forms: what comes after the original. Previewed as made, home is the
+-- original's notes, an echo has the changes of what it echoes - and
+-- unticking in an echo unticks in both.
+do
+  P.ext = {}
+  local tr = project("noir", "Noir")
+  start()
+  frame()
+  for _, name in ipairs({ "All new", "Home between", "In pairs", "A refrain" }) do
+    ok(has(g.buttons, name), "the form " .. name .. " is offered")
+  end
+  ok(has(g.texts, "A  A' A'' A''' A(4)"), "and the letters of the one chosen")
+  click("Home between")
+  ok(has(g.texts, "A  A' A A'' A"), "Home between: A' A A'' A")
+  eq(g.ink[buttonIndex("Home between")].bg, 0xFFF200FF, "lit")
+  click(">")
+  ok(has(g.texts, "the original again, played afresh"), "the second is home")
+  ok(has(g.texts, "No changes: the original, with only the feel new."), "with no changes")
+  local seed = (1000 * 7 + 0 + 1 * 31) % 2147483000 + 1
+  local src = { notes = F.noir, lead = 0, beats = 32, barBeats = 4, pulse = 1 }
+  local o = V.defaults(); o.amount = 0.35; o.form = 2
+  local expected = V.series(src, V.analyse(src, T), o, seed, 4, T, 1, {})
+  click("Make 4 variations")
+  for i = 1, 4 do
+    eq(notesOfItem(tr.items[i + 1]), notesOfList(expected[i].notes), ("form: variation %d as previewed"):format(i))
+  end
+  eq(V.likeness(F.noir, P.notesOf(tr.items[3])), 1, "the one home plays every note of the original")
+
+  P.selected = { tr.items[1] }
+  click("Use selected items")
+  click("In pairs")
+  click(">")
+  ok(has(g.texts, "an echo of variation 1: the same changes, played afresh"), "the second echoes the first")
+  local box
+  for _, l in ipairs(g.checkboxes) do if l:find("##change", 1, true) then box = box or l end end
+  toggle(box)
+  ok(g.ticked[box] == false, "unticked in the echo")
+  click("<")
+  ok(g.ticked[box] == false, "is unticked in what it echoes too")
+  local before = #tr.items
+  click("Make 4 variations")
+  local a, b = P.notesOf(tr.items[before + 1]), P.notesOf(tr.items[before + 2])
+  local pa, pb = {}, {}
+  for _, n in ipairs(a) do pa[#pa + 1] = n.pitch end
+  for _, n in ipairs(b) do pb[#pb + 1] = n.pitch end
+  eq(table.concat(pb, ","), table.concat(pa, ","), "the echo made plays the same notes")
+
+  slide("##count", 1)
+  ok(not has(g.buttons, "In pairs"), "one variation: no forms, no dead controls")
+  atexitFn()
+  ok(P.ext["MidiVariator:state"]:find("form=3"), "the form is remembered")
+  P.ext["MidiVariator:state"] = "form=99;count=4"
+  start()
+  frame()
+  eq(g.ink[buttonIndex("A refrain")].bg, 0xFFF200FF, "a form past the end is clamped to the last")
+end
+
 -- Unticking a change: a box for each, the preview and what is made both
 -- leave it out, and a new batch starts with every box ticked.
 do
@@ -767,7 +824,7 @@ for _, name in ipairs({ "Use selected items", "Notes", "Rhythm", "Add notes", "L
                         "<", ">", "New set", "Make 4 variations", "Vary selected in place",
                         "Put back the original", "Stay in the original's notes", "Back to what it heard",
                         "Db", "B", "Major", "Minor Pentatonic", "Diminished Half-Whole",
-                        "Develop the motif" }) do
+                        "Develop the motif", "All new", "Home between", "In pairs", "A refrain" }) do
   ok(reached[name], "the sweep reached '" .. name .. "'")
 end
 
