@@ -83,7 +83,7 @@ M.KINDS = {
   { key = "add",     name = "Add notes",       moves = { { "passing", 2 }, { "grace", 1 }, { "pickup", 1 }, { "fill", 2 }, { "ghost", 2 } } },
   { key = "remove",  name = "Leave notes out", moves = { { "drop", 2 }, { "thin", 2 } } },
   { key = "chords",  name = "Chord voicing",   moves = { { "revoice", 2 }, { "roll", 1 } } },
-  { key = "quality", name = "Chord quality",   moves = { { "quality", 4 }, { "colour", 1 } } },
+  { key = "quality", name = "Chord quality",   moves = { { "quality", 4 }, { "colour", 1 }, { "arpeggio", 4 } } },
 }
 M.FEELS = {
   { key = "timing",   name = "Timing" },
@@ -296,7 +296,73 @@ function M.analyse(src, T, pick)
   an.grid = M.grid(notes)
   an.unit = math.min(an.grid, M.MAX_UNIT)
   an.drums = an.hi < an.lo
+  an.broken = M.brokenChords(an, src, T)
   return an
+end
+
+--[[  Arpeggiated chords: a bar - or half a bar, where its halves are two
+      different chords - whose notes, struck one at a time, spell a chord.
+      Every moment a single note; at least ARP_NOTES of them on at least
+      three different notes, one of which comes round again (an
+      accompaniment goes round its chord; a tune like D F A G does not);
+      at least half as many leaps as steps between one note and the next
+      (B G F G is an arpeggio, a scale is not); at most one pair of its
+      notes a step apart; and ScaleView Pro's reader must find a chord.
+      Returns { { t0, t1, events = { index, ... } } }. ]]
+M.ARP_NOTES = 4
+
+function M.brokenChords(an, src, T)
+  local out = {}
+  if not T or an.drums then return out end
+  local function window(t0, t1)
+    local evs, pitches, pcs, k = {}, {}, {}, 0
+    local leaps, steps = 0, 0
+    for _, e in ipairs(an.events) do
+      if e.start >= t0 - 1e-6 and e.start < t1 - 1e-6 then
+        if #e.notes ~= 1 or e.drum then return nil end
+        evs[#evs + 1] = e.index
+        local p = e.notes[1].pitch
+        if #pitches > 0 then
+          local d = math.abs(p - pitches[#pitches])
+          if d == 1 or d == 2 then steps = steps + 1 elseif d >= 3 then leaps = leaps + 1 end
+        end
+        pitches[#pitches + 1] = p
+        if not pcs[p % 12] then pcs[p % 12], k = true, k + 1 end
+      end
+    end
+    if #evs < M.ARP_NOTES or k < 3 or #evs <= k or leaps * 2 < steps or leaps == 0 then return nil end
+    -- A chord spelled out has at most one pair of its notes a step apart
+    -- (the seventh and root of Amin7: G A). E G A B is a tune round Em.
+    local near = 0
+    for a in pairs(pcs) do
+      for b in pairs(pcs) do
+        local d = (b - a) % 12
+        if d == 1 or d == 2 then near = near + 1 end
+      end
+    end
+    if near > 1 then return nil end
+    local name, root = T.nameChord(pitches, an.chordKey)
+    if not root then return nil end
+    return { t0 = t0, t1 = t1, events = evs, name = name }
+  end
+  local bb = src.barBeats or 4
+  local first, last = an.events[1], an.events[#an.events]
+  if not first then return out end
+  for b = math.floor(first.start / bb + 1e-6), math.floor(last.start / bb + 1e-6) do
+    local h1 = window(b * bb, b * bb + bb / 2)
+    local h2 = window(b * bb + bb / 2, (b + 1) * bb)
+    if h1 and h2 and h1.name ~= h2.name then
+      out[#out + 1], out[#out + 2] = h1, h2
+    else
+      local w = window(b * bb, (b + 1) * bb)
+      if w then out[#out + 1] = w
+      else
+        if h1 then out[#out + 1] = h1 end
+        if h2 then out[#out + 1] = h2 end
+      end
+    end
+  end
+  return out
 end
 
 ------------------------------------------------------------------------------
@@ -1295,6 +1361,252 @@ function MOVES.quality(v)
   return nil
 end
 
+-- "Bar 3" or "Bars 3-4" (or half bars, "Bar 2, second half").
+local function spanName(v, t0, t1)
+  local bb = v.src.barBeats
+  local b0, b1 = math.floor(t0 / bb + 1e-6), math.floor(t1 / bb - 1e-6)
+  local half = (t1 - t0) < bb - 1e-6
+  if b0 == b1 then
+    if half and math.abs(t0 - b0 * bb) > 1e-6 then return ("Bar %d, second half"):format(b0 + 1) end
+    if half then return ("Bar %d, first half"):format(b0 + 1) end
+    return ("Bar %d"):format(b0 + 1)
+  end
+  return ("Bars %d-%d"):format(b0 + 1, b1 + 1)
+end
+
+--[[  An arpeggiated chord changed in quality: the same rules, applied to
+      a chord whose notes come one at a time (M.brokenChords).
+
+        move  every note of that chord tone moves, wherever it is played
+        add   a doubled note - not the lowest - becomes the new tone, at
+              the nearest pitch that fits (A C E A becomes A C E G: Amin7)
+        drop  every note of that tone becomes the nearest chord note left
+
+      The lowest note is the bass and never changes; a protected note (the
+      first or last of the phrase) never changes; nothing grinds against
+      notes outside the arpeggio. The same arpeggio in the bars straight
+      after (or before) changes with it, as a repeated chord does. ]]
+function MOVES.arpeggio(v)
+  if not v.T or not v.an.chordKey or #v.an.broken == 0 then return nil end
+  local evs = v.an.events
+  local function pitchesIn(w)
+    local ps = {}
+    for _, i in ipairs(w.events) do
+      local n = evs[i].notes[1]
+      if n.gone then return nil end
+      ps[#ps + 1] = n.pitch
+    end
+    return ps
+  end
+  local function key(w)
+    local ps = pitchesIn(w)
+    if not ps then return nil end
+    return table.concat(ps, ",")
+  end
+
+  local list, weights = {}, {}
+  local h = v.history or {}
+  for wi, w in ipairs(v.an.broken) do
+    local free = true
+    for _, i in ipairs(w.events) do if v.touched[evs[i]] then free = false end end
+    if free and key(w) then
+      local e = evs[w.events[1]]
+      list[#list + 1] = wi
+      weights[#weights + 1] = focusWeight(v, e) / (1 + 2 * (h["arpeggio@" .. e.index] or 0))
+    end
+  end
+  if #list == 0 then return nil end
+  local wi = choose(v.r, list, weights)
+  local w = v.an.broken[wi]
+
+  -- The run: the same notes in the same order, in the windows next to it.
+  local run = { w }
+  local k = key(w)
+  for dir = -1, 1, 2 do
+    local j = wi + dir
+    while v.an.broken[j] do
+      local o = v.an.broken[j]
+      local touching = dir > 0 and math.abs(o.t0 - run[#run].t1) < 1e-6 or math.abs(o.t1 - run[1].t0) < 1e-6
+      local free = true
+      for _, i in ipairs(o.events) do if v.touched[evs[i]] then free = false end end
+      if not touching or not free or key(o) ~= k then break end
+      if dir < 0 then table.insert(run, 1, o) else run[#run + 1] = o end
+      j = j + dir
+    end
+  end
+
+  local pitches = pitchesIn(w)
+  local set, distinct = {}, {}
+  for _, p in ipairs(pitches) do
+    if not set[p] then set[p] = true; distinct[#distinct + 1] = p end
+  end
+  table.sort(distinct)
+  local before, root = v.T.nameChord(distinct, v.an.chordKey)
+  if not root then return nil end
+  local bass = distinct[1]
+  local has, count = {}, {}
+  for _, p in ipairs(distinct) do has[(p - root) % 12] = true end
+  for _, p in ipairs(pitches) do count[p % 12] = (count[p % 12] or 0) + 1 end
+  -- How many different pitches carry each pitch class: a doubled one can
+  -- give one of its pitches to a new note.
+  local spread = {}
+  for _, p in ipairs(distinct) do spread[p % 12] = (spread[p % 12] or 0) + 1 end
+
+  local inRun, protectedNote = {}, {}
+  local span0, span1 = math.huge, -math.huge
+  for _, rw in ipairs(run) do
+    for _, i in ipairs(rw.events) do
+      local n = evs[i].notes[1]
+      inRun[n] = true
+      if protected(v, evs[i]) then protectedNote[n] = true end
+      span0, span1 = math.min(span0, n.start), math.max(span1, noteEnd(n))
+    end
+  end
+  local function outsideClash(q, n)
+    for _, o in ipairs(v.notes) do
+      if not inRun[o] and not o.gone and not isDrum(o)
+         and o.start < noteEnd(n) - 1e-6 and noteEnd(o) > n.start + 1e-6
+         and (harsh(q, o.pitch) or q == o.pitch) then
+        return true
+      end
+    end
+    return false
+  end
+
+  local rules = {}
+  for _, rule in ipairs(M.QUALITY_RULES) do
+    local ok = true
+    for _, iv in ipairs(rule.needs) do if not has[iv] then ok = false end end
+    for _, iv in ipairs(rule.lacks) do if has[iv] then ok = false end end
+    if ok and not v.opts.outside then
+      local new = {}
+      if rule.add then new[#new + 1] = rule.add end
+      if rule.move then new[#new + 1] = rule.move[2] end
+      for _, iv in ipairs(new) do if not v.an.pcs[(root + iv) % 12] then ok = false end end
+    end
+    if ok then rules[#rules + 1] = rule end
+  end
+
+  while #rules > 0 do
+    local rule, ri = choose(v.r, rules)
+    table.remove(rules, ri)
+    -- old pitch -> new pitch, for every distinct pitch of the arpeggio;
+    -- and, for an add with nothing doubled, every other strike of the
+    -- note struck most often (C G E G becomes C G E B).
+    local map, every, ok = {}, nil, true
+    if rule.move then
+      local f, t = rule.move[1], rule.move[2]
+      local d = ((t - f + 6) % 12) - 6
+      local any = false
+      for _, p in ipairs(distinct) do
+        if (p - root) % 12 == f then
+          if p == bass then ok = false end
+          map[p], any = p + d, true
+        end
+      end
+      if not any then ok = false end
+    end
+    if ok and rule.drop then
+      local left = {}
+      for _, p in ipairs(distinct) do if (p - root) % 12 ~= rule.drop then left[#left + 1] = p end end
+      local pcsLeft, kinds = {}, 0
+      for _, p in ipairs(left) do if not pcsLeft[p % 12] then pcsLeft[p % 12], kinds = true, kinds + 1 end end
+      if kinds < 3 then ok = false end
+      for _, p in ipairs(distinct) do
+        if ok and (p - root) % 12 == rule.drop then
+          if p == bass then ok = false; break end
+          local best
+          for _, q in ipairs(left) do
+            if not best or math.abs(q - p) < math.abs(best - p) or (math.abs(q - p) == math.abs(best - p) and q > best) then
+              best = q
+            end
+          end
+          map[p] = best
+        end
+      end
+    end
+    local place
+    if ok and rule.add then
+      local pc = (root + rule.add) % 12
+      local now = {}
+      for _, p in ipairs(distinct) do now[#now + 1] = map[p] or p end
+      -- The highest doubled pitch (not the bass) gives way to the new tone;
+      -- with none doubled, every other strike of the commonest one does.
+      local given
+      for i = #distinct, 2, -1 do
+        local p = distinct[i]
+        if not map[p] and spread[p % 12] > 1 then given = p; break end
+      end
+      local struck = {}
+      for _, p in ipairs(pitches) do struck[p] = (struck[p] or 0) + 1 end
+      local others = {}
+      if not given then
+        local most = 1
+        for i = 2, #distinct do
+          local p = distinct[i]
+          if not map[p] and struck[p] > most then given, most, every = p, struck[p], true end
+        end
+      end
+      if not given then ok = false
+      else
+        for _, p in ipairs(now) do if every or p ~= given then others[#others + 1] = p end end
+        for d = 0, 6 do
+          for _, q in ipairs({ given - d, given + d }) do
+            if not place and q % 12 == pc and q > bass and fits(q, others, rule.rub) then place = q end
+          end
+        end
+        if not place then ok = false elseif not every then map[given] = place end
+      end
+      if ok and every then
+        -- Every other strike of `given`, counted through the window.
+        every = { pitch = given, to = place }
+      end
+    end
+    if ok and (next(map) or every) then
+      -- The window's notes in time order, and what each becomes; every
+      -- window of the run plays the same notes, so the same plan fits all.
+      local function plan(rw)
+        local out, seenGiven = {}, 0
+        for k2, i in ipairs(rw.events) do
+          local p = evs[i].notes[1].pitch
+          local q = map[p] or p
+          if every and p == every.pitch then
+            seenGiven = seenGiven + 1
+            if seenGiven % 2 == 0 then q = every.to end
+          end
+          out[k2] = q
+        end
+        return out
+      end
+      local after, seen = {}, {}
+      for _, q in ipairs(plan(w)) do
+        if not seen[q] then seen[q] = true; after[#after + 1] = q end
+      end
+      table.sort(after)
+      local name = v.T.nameChord(after, v.an.chordKey)
+      if name == before then ok = false end
+      for _, rw in ipairs(run) do
+        local pl = plan(rw)
+        for k2, i in ipairs(rw.events) do
+          local n = evs[i].notes[1]
+          if pl[k2] ~= n.pitch and (protectedNote[n] or outsideClash(pl[k2], n)) then ok = false end
+        end
+      end
+      if ok then
+        for _, rw in ipairs(run) do
+          local pl = plan(rw)
+          for k2, i in ipairs(rw.events) do evs[i].notes[1].pitch = pl[k2] end
+          for _, i in ipairs(rw.events) do v.touched[evs[i]] = true end
+        end
+        v.chosen = evs[w.events[1]]
+        local times = #run > 1 and (", all %d times it is played"):format(#run) or ""
+        return ("%s: the arpeggio %s became %s%s"):format(spanName(v, w.t0, w.t1), before, name, times)
+      end
+    end
+  end
+  return nil
+end
+
 M.MOVES = MOVES
 
 ------------------------------------------------------------------------------
@@ -1368,19 +1680,6 @@ local STEP_NAMES = { "a step", "a third", "a fourth", "a fifth", "a sixth", "a s
 local function distance(L, s, d)
   if #L == 7 and STEP_NAMES[math.abs(s)] then return STEP_NAMES[math.abs(s)] end
   return INTERVAL_NAMES[math.min(12, math.abs(d))]
-end
-
--- "Bar 3" or "Bars 3-4" (or half bars, "Bar 2, second half").
-local function spanName(v, t0, t1)
-  local bb = v.src.barBeats
-  local b0, b1 = math.floor(t0 / bb + 1e-6), math.floor(t1 / bb - 1e-6)
-  local half = (t1 - t0) < bb - 1e-6
-  if b0 == b1 then
-    if half and math.abs(t0 - b0 * bb) > 1e-6 then return ("Bar %d, second half"):format(b0 + 1) end
-    if half then return ("Bar %d, first half"):format(b0 + 1) end
-    return ("Bar %d"):format(b0 + 1)
-  end
-  return ("Bars %d-%d"):format(b0 + 1, b1 + 1)
 end
 
 -- The moments of [t0, t1) a develop may change, and the pitched notes of
@@ -1940,7 +2239,11 @@ function M.vary(src, an, opts, seed, T, history)
     tries = tries + 1
     local kind = choose(r, kinds, kindWeights)
     local names, ws = {}, {}
-    for _, m in ipairs(kind.moves) do names[#names + 1] = m[1]; ws[#ws + 1] = m[2] end
+    for _, m in ipairs(kind.moves) do
+      -- The arpeggio move is offered only where there are arpeggios, so the
+      -- dice for everything else fall exactly as they did before it.
+      if m[1] ~= "arpeggio" or #an.broken > 0 then names[#names + 1] = m[1]; ws[#ws + 1] = m[2] end
+    end
     local name = choose(r, names, ws)
     v.move, v.chosen = name, nil
     local said = MOVES[name](v)

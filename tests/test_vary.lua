@@ -57,7 +57,7 @@ local function fingerprint(notes)
   return table.concat(out, " ")
 end
 
-local function harshTime(notes, betweenMomentsOnly)
+local function harshTime(notes, betweenMomentsOnly, sameChord)
   -- Time two notes a semitone (or major seventh, minor ninth) apart sound
   -- together, ignoring overlaps too short to hear as a clash. With
   -- betweenMomentsOnly, two notes struck together in one chord do not count.
@@ -66,6 +66,7 @@ local function harshTime(notes, betweenMomentsOnly)
     for j = i + 1, #notes do
       local a, b = notes[i], notes[j]
       local together = betweenMomentsOnly and math.abs(a.start - b.start) < 0.13
+      if sameChord and sameChord(a, b) then together = true end
       if (a.chan or 0) ~= 9 and (b.chan or 0) ~= 9 and not together then
         local d = math.abs(a.pitch - b.pitch) % 12
         if d == 1 or d == 11 then
@@ -667,18 +668,35 @@ for _, name in ipairs({ "popChords", "strummed", "walking", "piano", "arpeggios"
     for seed = 1, 40 do
       local tag = ("%s, chord quality%s, seed %d"):format(name, outside and " (may leave the scale)" or "", seed)
       local var = V.vary(src, an, qualityOnly(outside), seed, T)
-      local lowest = {}
-      for _, n in ipairs(var.notes) do
-        local k = math.floor(n.start * 8 + 0.5)
-        lowest[k] = math.min(lowest[k] or 999, n.pitch)
+      -- The bass of a chord struck together is its lowest note; of an
+      -- arpeggio, the lowest note of the bar.
+      local function bassAt(notes, t)
+        if name == "arpeggios" then t = math.floor(t / 4) * 4 end
+        local lo
+        for _, n in ipairs(notes) do
+          local at = n.start
+          if name == "arpeggios" then at = math.floor(at / 4 + 1e-9) * 4 end
+          if math.abs(at - t) < 0.07 then lo = math.min(lo or 999, n.pitch) end
+        end
+        return lo
       end
       local moved
       for _, e in ipairs(an.events) do
-        local k = math.floor(e.start * 8 + 0.5)
-        if lowest[k] and lowest[k] ~= e.bass.pitch then moved = e.bass.pitch .. "->" .. lowest[k] end
+        local was, now = bassAt(src.notes, e.start), bassAt(var.notes, e.start)
+        if now and now ~= was then moved = was .. "->" .. now end
       end
       if not ok(not moved, tag .. ": the bass stays (" .. tostring(moved) .. ")") then break end
-      if not ok(harshTime(var.notes, true) <= origHarsh + 0.26, tag .. ": the new chord grinds against nothing else") then break end
+      -- An arpeggio's notes are one chord, struck one after another: a
+      -- changed one's colour (Emaj7's D# over its E) is the point too.
+      local changedBar = {}
+      for _, c in ipairs(var.moves) do
+        if c.move == "arpeggio" then changedBar[math.floor(c.at / 4 + 1e-9)] = true end
+      end
+      local function sameChord(a, b)
+        local ba, bb = math.floor(a.start / 4 + 1e-9), math.floor(b.start / 4 + 1e-9)
+        return ba == bb and changedBar[ba]
+      end
+      if not ok(harshTime(var.notes, true, sameChord) <= origHarsh + 0.26, tag .. ": the new chord grinds against nothing else") then break end
       if not outside then
         local bad
         for _, n in ipairs(var.notes) do if not an.pcs[n.pitch % 12] then bad = n.pitch end end
@@ -718,8 +736,121 @@ do
   ok(checked > 0, "and the strummed fixture has repeated chords changed")
 end
 
+-- Arpeggiated chords: which music has them.
+local function alberti(chords, bars)
+  -- Each chord as bass, top, middle, top in eighths, twice a bar (C G E G).
+  local out = {}
+  for b, ch in ipairs(chords) do
+    for rep = 0, (bars or 1) - 1 do
+      for i, k in ipairs({ 1, 3, 2, 3, 1, 3, 2, 3 }) do
+        out[#out + 1] = { pitch = ch[k], start = ((b - 1) * (bars or 1) + rep) * 4 + (i - 1) * 0.5, len = 0.5, vel = 90 }
+      end
+    end
+  end
+  return out
+end
+do
+  local function broken(notes) return #V.analyse(source(notes), T).broken end
+  eq(broken(F.arpeggios), 4, "the arpeggio fixture: a broken chord in every bar")
+  eq(broken(alberti({ { 48, 52, 55 }, { 47, 53, 55 }, { 48, 52, 55 } })), 3, "an Alberti bass: one a bar")
+  -- Two chords a bar: found in halves.
+  local halves = {}
+  for b, ch in ipairs({ { 48, 52, 55 }, { 45, 48, 52 } }) do
+    for i, k in ipairs({ 1, 2, 3, 2 }) do
+      halves[#halves + 1] = { pitch = ch[k], start = (b - 1) * 2 + (i - 1) * 0.5, len = 0.5, vel = 90 }
+    end
+  end
+  eq(broken(halves), 2, "two arpeggios in one bar: found by halves")
+  -- A tune that outlines a chord once, up and back down, is a tune: an
+  -- accompaniment goes round and round its chord.
+  local once = {}
+  for i, p in ipairs({ 62, 65, 69, 72, 71, 67, 64, 60 }) do
+    once[#once + 1] = { pitch = p, start = (i - 1), len = 1, vel = 90 }
+  end
+  eq(broken(once), 0, "a tune outlining a chord once is not an accompaniment")
+  for _, name in ipairs({ "twinkle", "ode", "minorTune", "noir", "run", "riff", "triplets", "popChords", "piano", "drums" }) do
+    local k = broken(F[name])
+    ok(name == "triplets" and k >= 0 or k == 0, name .. ": no broken chords found (" .. k .. ")")
+  end
+end
+
+-- Arpeggios change by the chord-quality rules: the rhythm and the number
+-- of notes stay, the lowest note of the bar stays, the change is named in
+-- ScaleView Pro's words - and the same arpeggio bar after bar changes as one.
+do
+  -- C, G7, C/E (its bass the third, E C G C) and C, two bars each.
+  local notes = alberti({ { 48, 52, 55 }, { 43, 53, 59 }, { 52, 55, 60 }, { 48, 52, 55 } }, 2)
+  local src = source(notes)
+  local an = V.analyse(src, T)
+  eq(#an.broken, 8, "set up: eight bars of Alberti bass")
+  local orig = V.copyNotes(src.notes)
+  local seen, together = {}, 0
+  for seed = 1, 80 do
+    local var = V.vary(src, an, qualityOnly(false), seed, T)
+    local tag = "Alberti, seed " .. seed
+    eq(#var.notes, #orig, tag .. ": as many notes")
+    for i, n in ipairs(var.notes) do
+      ok(math.abs(n.start - orig[i].start) < 1e-9 and math.abs(n.len - orig[i].len) < 1e-9, tag .. ": the same rhythm")
+      if n.start % 4 < 1e-9 then eq(n.pitch, orig[i].pitch, tag .. ": the bass of each bar stays") end
+      ok(an.pcs[n.pitch % 12], tag .. ": in the scale")
+    end
+    for _, c in ipairs(var.moves) do
+      ok(c.move == "arpeggio", tag .. ": an arpeggio change, not another (" .. c.move .. ")")
+      local was, now = c.text:match("arpeggio (%S+) became ([^,%s]+)")
+      ok(was and now and was ~= now, tag .. ": named before and after: " .. c.text)
+      if was then seen[was .. ">" .. now] = true end
+      if c.text:find("all 2 times") then
+        together = together + 1
+        -- Both bars of that chord now play the same notes.
+        -- (The bar named is the one picked; its twin is either side.)
+        local bar = math.floor(c.at / 4 + 1e-9)
+        local by = {}
+        for _, n in ipairs(var.notes) do
+          local nb = math.floor(n.start / 4 + 1e-9)
+          by[nb] = by[nb] or {}
+          table.insert(by[nb], n.pitch)
+        end
+        local mine = table.concat(by[bar], ",")
+        local function was(b2)
+          local t = {}
+          for _, n in ipairs(orig) do if math.floor(n.start / 4 + 1e-9) == b2 then t[#t + 1] = n.pitch end end
+          return table.concat(t, ",")
+        end
+        local twin = (by[bar - 1] and was(bar - 1) == was(bar)) and bar - 1 or bar + 1
+        eq(table.concat(by[twin] or {}, ","), mine, tag .. ": a repeated arpeggio changes in both bars")
+      end
+    end
+  end
+  ok(together > 0, "repeated arpeggios are changed together")
+  ok(seen["C>Cmaj7"] or seen["C>C6"] or seen["C>Cadd9"] or seen["C>Csus4"], "C changes as a chord would")
+end
+
+-- An arpeggio under a tune note held over from the bar before: no change
+-- may grind against it (C G E G under a held E5 never becomes Csus4,
+-- whose F would sit a minor ninth under it).
+do
+  local notes = { { pitch = 76, start = 0, len = 8, vel = 100 } }
+  for _, n in ipairs(alberti({ { 48, 52, 55 }, { 48, 52, 55 } })) do n.start = n.start + 4; notes[#notes + 1] = n end
+  local src = source(notes)
+  local an = V.analyse(src, T)
+  eq(#an.broken, 2, "set up: the arpeggio bars under the held note")
+  local changed = 0
+  for seed = 1, 80 do
+    local var = V.vary(src, an, qualityOnly(true), seed, T)
+    changed = changed + #var.moves
+    local grind
+    for _, n in ipairs(var.notes) do
+      if n.pitch ~= 76 and n.start < 8 and (math.abs(76 - n.pitch) % 12 == 1 or math.abs(76 - n.pitch) % 12 == 11) then
+        grind = n.pitch
+      end
+    end
+    if not ok(not grind, "seed " .. seed .. ": nothing grinds against the held E (" .. tostring(grind) .. ")") then break end
+  end
+  ok(changed > 0, "and the arpeggio under it is changed")
+end
+
 -- Nothing to change: melodies and drums get no chord-quality change.
-for _, name in ipairs({ "twinkle", "noir", "drums", "run" }) do
+for _, name in ipairs({ "twinkle", "noir", "drums", "run", "minorTune", "riff", "ode" }) do
   local src = source(F[name])
   local an = V.analyse(src, T)
   local any = false

@@ -389,6 +389,16 @@ start()
 frame()
 checkInk("piano")
 
+-- Arpeggios: Chord quality changes them, Chord voicing has nothing to do.
+P.ext = {}
+project("arpeggios", "Arps")
+start()
+frame()
+ok(has(g.buttons, "Chord quality"), "arpeggiated chords get the Chord quality switch")
+ok(not has(g.buttons, "Chord voicing"), "but not Chord voicing: no chords struck together")
+ok(has(g.checkboxes, "Chord changes may leave the scale"), "and the box to leave the scale")
+checkInk("arpeggios")
+
 project("drums", "Beat", 8)
 start()
 frame()
@@ -669,6 +679,7 @@ local STATES = {
     function() click("Minor (Natural)"); toggle("Bring the original into this scale") end },
   { "own notes", function() project("twinkle", "Twinkle") end,
     function() click("Stay in the original's notes") end },
+  { "arpeggios", function() project("arpeggios", "Arps") end },
   { "a melody at 100%", function() project("noir", "Noir") end,
     function() slide("##amount", 100) end },
 }

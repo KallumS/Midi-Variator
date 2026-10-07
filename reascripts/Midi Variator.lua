@@ -252,6 +252,12 @@ local function hasChords()
   return false
 end
 
+-- Chords played one note at a time: Chord quality changes them too.
+local function hasArpeggios()
+  for _, an in ipairs(ui.ans or {}) do if #an.broken > 0 then return true end end
+  return false
+end
+
 local function allDrums()
   for _, an in ipairs(ui.ans or {}) do if not an.drums then return false end end
   return true
@@ -591,7 +597,8 @@ local function drawChanges()
     quality = "A chord changed to a neighbouring quality, read by ScaleView Pro:\n" ..
               "C to Cmaj7, C6 or Cadd9; G7 to G9, G13, G11 or G7b9; Cmin to Cmin7\n" ..
               "or Cdim; a sus chord, or one resolved. The bass stays where it is,\n" ..
-              "and a chord struck several times in a row changes every time.",
+              "and a chord struck several times in a row changes every time.\n" ..
+              "Arpeggiated chords too: C G E G can become C G E B (Cmaj7).",
     timing = "Each moment a few milliseconds early or late, as a player would be.",
     velocity = "A little louder or softer, with a gentle swell across the phrase.",
     lengths = "Notes held a touch longer or shorter.",
@@ -600,8 +607,10 @@ local function drawChanges()
   label("Changes")
   local first = true
   for _, k in ipairs(V.KINDS) do
-    local chordy = k.key == "chords" or k.key == "quality"
-    local shown = not ((chordy and not hasChords()) or (k.key == "notes" and allDrums()))
+    -- Voicing needs chords struck together; quality takes arpeggios too.
+    local shown = not ((k.key == "chords" and not hasChords())
+                    or (k.key == "quality" and not hasChords() and not hasArpeggios())
+                    or (k.key == "notes" and allDrums()))
     if shown then
       if not first then ImGui.SameLine(ctx) end
       switch(k.key, k.name, hints[k.key])
@@ -610,7 +619,7 @@ local function drawChanges()
   end
 
   -- Only while Chord quality is on and there are chords for it to change.
-  if st.quality == 1 and hasChords() then
+  if st.quality == 1 and (hasChords() or hasArpeggios()) then
     ImGui.Dummy(ctx, 1, 1)
     ImGui.SameLine(ctx, LABEL_W)
     local c, v = ImGui.Checkbox(ctx, "Chord changes may leave the scale", st.outside == 1)
