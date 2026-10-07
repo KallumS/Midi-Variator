@@ -613,6 +613,12 @@ do
     { { C4, C4 + 3, C4 + 6, C4 + 9 }, "Cdim7" }, { { C4, C4 + 3, C4 + 6, C4 + 10 }, "Cmin7b5" },
     { { C4, C4 + 2, C4 + 4, C4 + 7, C4 + 10 }, "C9" }, { { C4, C4 + 5, C4 + 7 }, "Csus4" },
     { { 52, 55, C4, 71 }, "Cmaj7/E" }, { { 45, C4, 64, 67 }, "Amin7" },
+    -- ScaleView Pro, October 2026: an altered dominant on its own root keeps
+    -- its alterations, and a draw goes to the reading with no slash.
+    { { 48, C4 + 4, C4 + 8, C4 + 10, C4 + 13 }, "Caug7b9" },   -- C7#5b9
+    { { 48, C4 + 4, C4 + 6, C4 + 10, C4 + 15 }, "C7b5#9" },
+    { { 48, C4 + 2, C4 + 7, C4 + 10 }, "C7sus2" },            -- was GminAdd11/C
+    { { 55, 57, 62, 65, 67 }, "G7sus2" },                     -- was DminAdd11/G
   }) do
     eq((T.nameChord(case[1])), case[2], "ScaleView Pro names " .. case[2])
   end

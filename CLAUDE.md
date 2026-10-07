@@ -14,7 +14,7 @@ Suggester does.
 | | |
 | --- | --- |
 | `reascripts/Midi Variator.lua` | The window and the wiring. ReaImGui lives only here. |
-| `reascripts/mv_theory.lua` | Keys, key finding and **ScaleView Pro's chord reader**: the whole of Midi Suggester's `ms_theory.lua` at `f026d15`, **copied unchanged**. |
+| `reascripts/mv_theory.lua` | Keys, key finding and **ScaleView Pro's chord reader**: the whole of Midi Suggester's `ms_theory.lua` at `6ed412b`, **copied unchanged**. |
 | `reascripts/mv_vary.lua` | The engine: reading the original, the moves, feel, keeping the original inside an item. |
 | `reascripts/mv_place.lua` | Everything that touches REAPER. |
 | `tools/demo.lua` | What the engine does to the test tunes, printed. |
@@ -152,9 +152,28 @@ that every gentler variation is exactly 1.2's.
 
 **ScaleView Pro is the definitive chord detector** (the user's words;
 ScaleView is a simplified version). `mv_theory` is now the whole of
-`ms_theory`, whose chord reader is ScaleView Pro's, checked line for line
-against `ScaleView Pro.lua` at `e31a6e8`. `T.nameChord(pitches, key)`
-returns the symbol, the root's pitch class and the bass's.
+`ms_theory`, whose chord reader is ScaleView Pro's - verbatim from
+`ScaleView Pro.lua` at `f9e2691`, and `nameChord` diffed against Pro itself
+(not the ScaleView plugin) over 481,696 names in eight keys, byte-identical.
+`T.nameChord(pitches, key)` returns the symbol, the root's pitch class and the
+bass's.
+
+**Re-copied 7 October 2026** for two changes made in Pro, and both change what
+the variator does, not only what it prints, because a quality change is
+applied from the root the reader finds:
+
+- **A draw goes to the reading with no slash.** G A D F G read `DminAdd11/G`
+  and is `G7sus2`, so it now changes the way a suspension does - to `G7`, or
+  `Gmin7` out of the scale - where it used to become `G9`, `G11` or
+  `Emin7(11)/G` from a D root. In a probe of eleven renamed chords, four
+  that got no change at all - the sus4-add9 shape, read before as
+  `Amin7(11)/G` and the like - now get `Gadd9` or `Gadd11`.
+- **An altered dominant on its own root keeps its alterations.** C7#5b9 read
+  `A#min9b5/C` and is `Caug7b9`. `QUALITY_RULES` has no move for an altered
+  fifth, so the only rule that fits is C7 -> C (drop the seventh), and it now
+  becomes `DbminMaj7/C`. Before, a Bb rule happened to turn the misread chord
+  into `C7b9`. A rule that moves the altered fifth back to a perfect one would
+  restore that, and is this table's decision, not the reader's.
 
 - `M.QUALITY_RULES`: each rule has `needs`/`lacks` (intervals above the
   root) and one `add`, `move` (a semitone or tone) or `drop` - the eleventh
@@ -172,7 +191,8 @@ returns the symbol, the root's pitch class and the bass's.
 - **A repeated chord changes as one** (`chordRun`): every strike in a row
   with the same notes, so a strummed bar does not get one odd strike.
 - The change reads "G7 became G9" in ScaleView Pro's names - which are its
-  own ("G7(13)", "DminAdd11/G" for G A D F G). **Never retune them here.**
+  own ("G7(13)", "G7sus2" for G A D F G - "DminAdd11/G" before October
+  2026). **Never retune them here.**
 - `an.chordKey` names chords: the picked scale's key when it is one of
   mv_theory's seven-note scales (so C minor names Eb), else the heard key.
 - **Arpeggios** ([0009](docs/decisions/0009-arpeggiated-chords-read-by-the-bar.md)):

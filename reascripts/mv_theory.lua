@@ -3,14 +3,14 @@
      Pure Lua. Nothing in this file touches REAPER or ImGui.
 
      Everything below the line is copied UNCHANGED from Midi Suggester's
-     reascripts/ms_theory.lua at commit f026d15, comments and all:
+     reascripts/ms_theory.lua at commit 6ed412b, comments and all:
 
        - Keys: ScaleView for REAPER's roots and seven-note scales.
        - Finding the key, with weights tuned on fifteen tunes there.
        - Naming a chord: ScaleView Pro's chord reader - the definitive one;
          ScaleView (not Pro) is a simplified version. Midi Suggester carries
-         it unchanged, and its CORE_RANK-to-analyse block was checked line
-         for line against reascripts/ScaleView Pro.lua at e31a6e8: identical.
+         it unchanged, and its CORE_RANK-to-analyse block is
+         reascripts/ScaleView Pro.lua's at f9e2691, verbatim.
          The variator uses it to find a chord's root before changing its
          quality, and to say what it became ("Bar 2: G7 became G9") in
          ScaleView Pro's own words.
@@ -243,12 +243,14 @@ end
 -- Reading a chord
 --
 -- Everything from here to `nameChord` is ScaleView Pro's chord reader,
--- copied from `reascripts/ScaleView Pro.lua` at commit e31a6e8 - its
+-- copied from `reascripts/ScaleView Pro.lua` at commit f9e2691 - its
 -- CORE_RANK table through `analyse`, unchanged, comments and all. The
 -- comments are its own and refer to its measurements, which are the reason
 -- the weights are what they are. Do not retune them here: a change belongs in
 -- ScaleView first, with its corpora, and is then copied across.
 -- tests/test_theory.lua holds ScaleView's own expected names to prove the copy.
+-- `nameChord` below is Pro's detectChord with the key passed in; its tiebreak
+-- (key, then no slash, then rank) is Pro's at the same commit.
 ------------------------------------------------------------------------------
 
 local CORE_RANK = {
@@ -546,9 +548,20 @@ local function analyseAs(has, root, bass, preferSharpFive)
         sonorities across the Bach chorales and 7 points of accuracy on
         inverted jazz voicings, and bought nothing - the chord Alt 2 exists
         for, Cb maj b9 #9, carries a b9 and a #9, not a b13. ]]
-    local athome = fifth ~= "b" and fifth ~= "#" and token ~= "maj7"
-                   and (token == "#11" or dominant
-                        or (triad and token ~= "b13"))
+    --[[  An altered fifth is no bar on a dominant standing on its own root.
+        A b9 or #9 over a b5 or #5 usually means the root has been guessed
+        wrong, but over a major third and a flat seventh with the root in the
+        bass it is the altered dominant - 7#5b9, 7b5#9, 7b9b13 - which every
+        lead sheet writes. Barring it read C7#5b9 as A#min9b5/C. Only from the
+        bass, because that is how the chord is played - the bass takes the
+        root, the hands take the alterations - and allowing it from an
+        inversion as well read F A C G C# over C as Aaug7#9/C, a #9 in the
+        bass, and moved 790 names in the sweep where this moves 455. ]]
+    local plainFifth = fifth ~= "b" and fifth ~= "#"
+    local athome = token ~= "maj7"
+                   and ((dominant and (plainFifth or root == bass))
+                        or (plainFifth and (token == "#11"
+                                            or (triad and token ~= "b13"))))
 
     --[[  A flattened sixth is a b13 only when a seventh is under it. Without
         one it is an added flat sixth, exactly as a natural sixth is a 6 rather
@@ -701,10 +714,18 @@ function M.nameChord(pitches, key)
       for pc = 0, 11 do
         if classes[pc] and key.pcs[pc] then fit = fit + 1 end
       end
+      --[[  After the key, a draw goes to the reading that needs no slash, and
+          only then to the commoner quality. C D G Bb over C cost the same as
+          C7sus2 and as Gmin add11 over C, and the minor triad's rank won it:
+          a slash nobody needed, chosen by a tiebreak. ]]
+      local slash = root ~= bass
       if not best or cost < best.cost
          or (cost == best.cost and fit > best.fit)
-         or (cost == best.cost and fit == best.fit and rank < best.rank) then
-        best = { root = root, name = name, cost = cost, rank = rank, fit = fit }
+         or (cost == best.cost and fit == best.fit and best.slash and not slash)
+         or (cost == best.cost and fit == best.fit and slash == best.slash
+             and rank < best.rank) then
+        best = { root = root, name = name, cost = cost, rank = rank, fit = fit,
+                 slash = slash }
       end
     end
   end
