@@ -343,4 +343,113 @@ for _, case in ipairs({
   balanced(case[1])
 end
 
+------------------------------------------------------------------------------
+-- Hearing a variation first
+------------------------------------------------------------------------------
+
+-- On the original's own track, in its place, the original muted; stepping
+-- swaps the notes while it plays; stopping takes it all back.
+P.reset()
+do
+  local tr = P.track("Piano", { fx = 2 })
+  local item = P.item(tr, 6, 8, F.single, "Motif", { ccs = { { at = 0, m2 = 64, m3 = 127 } } })
+  local other = P.item(tr, 32, 4, F.single, "Already muted", { mute = true })
+  P.selected = { item, other }
+  P.cursor = 1.5
+  local srcs = Place.read()
+  local tracksBefore, undoBefore = #P.tracks, #P.undoNames
+  local variation = { { pitch = 64, start = srcs[1].lead, len = 2, vel = 90, chan = 0 } }
+  local muted = { { pitch = 67, start = srcs[2].lead, len = 1, vel = 90, chan = 0 } }
+  eq(Place.auditionStart(srcs, { variation, muted }), Place.OK, "audition starts")
+  ok(Place.auditioning(), "and is auditioning")
+  ok(P.playing, "REAPER plays")
+  eq(P.cursor * 2, 4, "from the bar the first item starts in")
+  eq(#P.tracks, tracksBefore, "on the original's own track: no new track")
+  eq(#tr.items, 4, "a temporary item for each")
+  local temp = tr.items[3]
+  eq(P.posQN(temp), 6, "in the original's place")
+  eq(P.notesOf(temp)[1].pitch, 64, "playing the variation")
+  eq(#temp.take.ccs, 1, "with the original's pedal")
+  eq(item.mute, 1, "the original is muted")
+  eq(item.ext.MidiVariatorAudition, "muted", "and marked, in case of a crash")
+  eq(#P.undoNames, undoBefore, "no undo history")
+  balanced("audition")
+
+  Place.auditionSwap({ { { pitch = 65, start = srcs[1].lead, len = 1, vel = 90, chan = 0 } }, muted })
+  eq(P.notesOf(temp)[1].pitch, 65, "a swap changes the notes while it plays")
+  ok(P.playing, "without stopping")
+
+  P.playPos = P.cursor + 1
+  local at = Place.auditionTick()
+  ok(at and at > 0 and at < 1, "the tick says how far through it is")
+  P.playPos = 1e9
+  eq(Place.auditionTick(), nil, "at the end it stops")
+  ok(not Place.auditioning(), "and is no longer auditioning")
+  ok(not P.playing, "REAPER stopped")
+  eq(#tr.items, 2, "the temporary items gone")
+  eq(item.mute, 0, "the original unmuted")
+  eq(item.ext.MidiVariatorAudition, "", "and unmarked")
+  eq(other.mute, 1, "an item muted before stays muted")
+  eq(P.cursor, 1.5, "the edit cursor back where it was")
+  balanced("audition stopped")
+
+  -- Stopped with REAPER's own transport.
+  Place.auditionStart(srcs, { variation, muted })
+  P.playing = false
+  eq(Place.auditionTick(), nil, "REAPER's stop stops it")
+  eq(#tr.items, 2, "and cleans up")
+  eq(item.mute, 0, "unmuted")
+end
+
+-- A track in fixed item lanes plays one lane: the variation goes on a
+-- temporary track with a copy of the FX instead.
+P.reset()
+do
+  local tr = P.track("Lanes", { fx = 3, freemode = 2 })
+  local after = P.track("After")
+  P.selected = { P.item(tr, 0, 4, F.single, "Motif") }
+  local srcs = Place.read()
+  Place.auditionStart(srcs, { { { pitch = 64, start = 0, len = 1, vel = 90, chan = 0 } } })
+  eq(#P.tracks, 3, "fixed lanes: a temporary track")
+  eq(P.tracks[2].name, Place.AUDITION_NAME, "straight under the original's")
+  eq(P.tracks[2].fx, 3, "with a copy of its FX")
+  eq(#tr.items, 1, "nothing added to the lanes")
+  Place.auditionStop()
+  eq(#P.tracks, 2, "stopping takes the track away")
+  ok(P.tracks[2] == after, "and only that track")
+end
+
+-- What a crash leaves behind is swept away when the script starts.
+P.reset()
+do
+  local tr = P.track("Piano")
+  local item = P.item(tr, 0, 4, F.single, "Motif")
+  P.selected = { item }
+  local lanes = P.track("Lanes", { freemode = 2 })
+  local laneItem = P.item(lanes, 0, 4, F.single, "Lane motif")
+  P.selected = { item, laneItem }
+  Place.auditionStart(Place.read(), { F.single, F.single })
+  -- The script dies here: nothing stops the audition.
+  Place.audition.items, Place.audition.tracks, Place.audition.muted = {}, {}, {}
+  eq(#P.tracks, 3, "set up: a temporary track left behind")
+  eq(item.mute, 1, "and a muted original")
+  Place.sweep()
+  eq(#P.tracks, 2, "swept: the temporary track")
+  eq(#tr.items, 1, "the temporary item")
+  eq(item.mute, 0, "the original unmuted")
+  eq(laneItem.mute, 0, "every one")
+end
+
+-- Nothing left to play: nothing starts.
+P.reset()
+do
+  local tr = P.track("Piano")
+  local item = P.item(tr, 0, 4, F.single, "Motif")
+  P.selected = { item }
+  local srcs = Place.read()
+  reaper.DeleteTrackMediaItem(tr, item)
+  eq(Place.auditionStart(srcs, { F.single }), Place.NOTHING, "a deleted source: nothing to play")
+  ok(not P.playing, "and REAPER does not play")
+end
+
 C.done()

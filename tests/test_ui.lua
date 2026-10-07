@@ -410,6 +410,62 @@ ok(has(g.texts, "drums"), "drums are recognised")
 ok(not has(g.buttons, "Notes"), "and get no Notes switch: a drum has no pitch to bend")
 checkInk("drums")
 
+-- Audition: the variation shown, in the original's place; stepping swaps
+-- it while it plays; Stop, REAPER's stop, Make and closing all clean up.
+do
+  P.ext = {}
+  local tr, item = project("noir", "Noir")
+  start()
+  frame()
+  local seed = (1000 * 7 + 0 + 1 * 31) % 2147483000 + 1
+  local src = { notes = F.noir, lead = 0, beats = 32, barBeats = 4, pulse = 1 }
+  local o = V.defaults(); o.amount = 0.35
+  local run = V.series(src, V.analyse(src, T), o, seed, 4, T, 1, {})
+  ok(has(g.buttons, "Audition"), "an Audition button")
+  click("Audition")
+  ok(P.playing, "it plays")
+  ok(has(g.buttons, "Stop"), "and the button says Stop")
+  eq(g.ink[buttonIndex("Stop")].bg, 0xFFF200FF, "lit while it plays")
+  eq(#tr.items, 2, "a temporary item")
+  eq(item.mute, 1, "the original silent")
+  eq(notesOfItem(tr.items[2]), notesOfList(run[1].notes), "playing the variation shown")
+  click(">")
+  eq(notesOfItem(tr.items[2]), notesOfList(run[2].notes), "> brings the next one straight in")
+  ok(P.playing, "still playing")
+  click("Stop")
+  ok(not P.playing, "Stop stops")
+  eq(#tr.items, 1, "and takes the temporary item away")
+  eq(item.mute, 0, "the original heard again")
+  ok(has(g.buttons, "Audition"), "the button says Audition again")
+
+  -- REAPER's own stop.
+  click("Audition")
+  P.playing = false
+  frame()
+  eq(#tr.items, 1, "stopped in REAPER: cleaned up")
+  ok(has(g.buttons, "Audition"), "and the button knows")
+
+  -- Make while it plays: it stops first, and only the variations are made.
+  click("Audition")
+  click("Make 4 variations")
+  ok(not P.playing, "Make stops the audition")
+  eq(#tr.items, 5, "and makes four, nothing else")
+  eq(item.mute, 0, "the original unmuted")
+
+  -- Closing the window while it plays.
+  P.selected = { item }
+  click("Use selected items")
+  click("Audition")
+  atexitFn()
+  ok(not P.playing and item.mute == 0, "closing the window stops it")
+
+  -- Starting again after a crash sweeps up what was left.
+  click("Audition")
+  start()
+  eq(item.mute, 0, "a new start unmutes what a crash left muted")
+  eq(#tr.items, 5, "and removes the temporary item")
+end
+
 -- Forms: what comes after the original. Previewed as made, home is the
 -- original's notes, an echo has the changes of what it echoes - and
 -- unticking in an echo unticks in both.
@@ -899,7 +955,7 @@ for _, name in ipairs({ "Use selected items", "Notes", "Rhythm", "Add notes", "L
                         "<", ">", "New set", "Make 4 variations", "Vary selected in place",
                         "Put back the original", "Stay in the original's notes", "Back to what it heard",
                         "Db", "B", "Major", "Minor Pentatonic", "Diminished Half-Whole",
-                        "Develop the motif", "Vary them together", "All new", "Home between", "In pairs", "A refrain" }) do
+                        "Develop the motif", "Vary them together", "Audition", "All new", "Home between", "In pairs", "A refrain" }) do
   ok(reached[name], "the sweep reached '" .. name .. "'")
 end
 

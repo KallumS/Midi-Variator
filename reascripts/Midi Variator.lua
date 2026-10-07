@@ -88,6 +88,7 @@ local ROLL_BEAT = 0x1E2228FF
 -- variation - what would be different.
 local SOURCE_NOTE = 0x6D7581FF
 local DIM       = 0x8A919CFF
+local PLAYHEAD  = 0xDDE1E7FF   -- where the audition has got to, in the roll
 local WARN      = 0xD2483FFF
 
 -- Shifts a colour towards white or black, keeping its alpha byte.
@@ -200,6 +201,7 @@ end
 ------------------------------------------------------------------------------
 
 local function load(quiet)
+  Place.auditionStop()   -- it was playing the last source's variation
   local srcs, why = Place.read()
   if not srcs then
     ui.srcs, ui.ans, ui.runs = nil, nil, nil
@@ -329,7 +331,15 @@ end
 
 local function plural(n, word) return ("%d %s%s"):format(n, word, n == 1 and "" or "s") end
 
+-- The notes the roll shows, one list per source: what an audition plays.
+local function shownLists()
+  local out = {}
+  for j in ipairs(ui.srcs) do out[j] = ui.runs[j][ui.show].notes end
+  return out
+end
+
 local function makeThem()
+  Place.auditionStop()
   if not sourcesAlive() then
     load(true)
     say("The item has gone - select it and press Use selected items.", true)
@@ -369,6 +379,7 @@ local function makeThem()
 end
 
 local function varySelected()
+  Place.auditionStop()
   local o, pk = options(), currentPick()
   local items = Place.selectedItems()
   local result, count = Place.varyGroupsInPlace(items, function(srcs, k)
@@ -390,6 +401,7 @@ local function varySelected()
 end
 
 local function restoreSelected()
+  Place.auditionStop()
   local result, count = Place.restore(Place.selectedItems())
   if result ~= Place.OK then say("None of the selected items is a variation.", true); return end
   if not sourcesAlive() then load(true) end
@@ -464,7 +476,7 @@ end
 -- The roll
 ------------------------------------------------------------------------------
 
-local function pianoRoll(layers, beats, barBeats, width, height)
+local function pianoRoll(layers, beats, barBeats, width, height, playhead)
   local dl = ImGui.GetWindowDrawList(ctx)
   local x, y = ImGui.GetCursorScreenPos(ctx)
   ImGui.InvisibleButton(ctx, "##roll", width, height)
@@ -496,6 +508,10 @@ local function pianoRoll(layers, beats, barBeats, width, height)
       local ny = y + height - (n.pitch - lo + 1) * rowh
       ImGui.DrawList_AddRectFilled(dl, nx, ny, nx + nw, ny + math.max(2, rowh - 1), layer[2], 1)
     end
+  end
+  if playhead then
+    local px = x + width * playhead
+    ImGui.DrawList_AddLine(dl, px, y, px, y + height, PLAYHEAD, 1)
   end
 end
 
@@ -804,11 +820,33 @@ local function drawVariations()
   ImGui.SameLine(ctx, 0, 16)
   if pick("New set", false, 90) then newSeed(); touched() end
   tip("Another set of variations with the same settings.")
+  ImGui.SameLine(ctx)
+  local playing = Place.auditioning()
+  if pick(playing and "Stop" or "Audition", playing, 90) then
+    if playing then Place.auditionStop()
+    else
+      if ui.dirty then rebuild() end
+      if Place.auditionStart(ui.srcs, shownLists()) ~= Place.OK then
+        say("The item has gone - select it and press Use selected items.", true)
+      end
+      ui.heard = { runs = ui.runs, show = ui.show }
+    end
+  end
+  tip("Plays this variation in the original's place, with the rest of the\n" ..
+      "project, from the bar it starts in; the original is silent meanwhile.\n" ..
+      "Step through the batch with < and > while it plays to hear the others.\n" ..
+      "Nothing is added to the project or the undo history.")
+  -- Stepped, or changed, while it plays: the new one comes straight in.
+  if Place.auditioning() and ui.heard and (ui.heard.runs ~= ui.runs or ui.heard.show ~= ui.show) then
+    Place.auditionSwap(shownLists())
+    ui.heard = { runs = ui.runs, show = ui.show }
+  end
 
   local w = select(1, ImGui.GetContentRegionAvail(ctx))
   local orig, beats = together(function(j) return ui.srcs[j].notes end)
   local var = together(function(j) return shown[j].notes end)
-  pianoRoll({ { orig, SOURCE_NOTE }, { var, SELECTED } }, beats, ui.srcs[1].barBeats, math.max(160, w), 110)
+  pianoRoll({ { orig, SOURCE_NOTE }, { var, SELECTED } }, beats, ui.srcs[1].barBeats, math.max(160, w), 110,
+            ui.playhead)
 
   -- The changes, each with a box: untick one to leave it out of this
   -- variation - the others stay exactly as they are.
@@ -878,6 +916,7 @@ end
 
 local function frame()
   stepNo = 0
+  ui.playhead = Place.auditionTick()   -- and stops it at the end
   if ui.dirty then rebuild() end
 
   drawSource()
@@ -923,6 +962,7 @@ local function loop()
 end
 
 local function shutdown()
+  Place.auditionStop()
   saveState()
   if sectionID then
     reaper.SetToggleCommandState(sectionID, cmdID, 0)
@@ -940,6 +980,7 @@ local function main()
   reaper.atexit(shutdown)
   if reaper.set_action_options then reaper.set_action_options(1) end
   ctx = ImGui.CreateContext(TITLE)
+  Place.sweep()   -- anything an audition left behind when REAPER or the script died
   load(true)
   reaper.defer(loop)
 end

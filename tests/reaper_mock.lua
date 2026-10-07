@@ -18,6 +18,7 @@
 local P = {
   tracks = {}, selected = {},
   tempo = 120, num = 4, den = 4,
+  cursor = 0, playing = false, playPos = 0,
   undoDepth = 0, undoNames = {}, refreshDepth = 0,
   ext = {}, calls = {},
 }
@@ -27,8 +28,12 @@ P.PPQ = PPQ
 local function qnPerSec() return P.tempo / 60 end
 local function barQN() return P.num * 4 / P.den end
 
-function P.track(name)
-  local t = { kind = "track", name = name or "", items = {}, alive = true }
+-- `freemode` is I_FREEMODE: 0 normal, 1 free positioning, 2 fixed item
+-- lanes (REAPER 7), where only one lane plays. `fx` counts its FX.
+function P.track(name, opts)
+  opts = opts or {}
+  local t = { kind = "track", name = name or "", items = {}, alive = true, ext = {},
+              fx = opts.fx or 0, freemode = opts.freemode or 0 }
   P.tracks[#P.tracks + 1] = t
   return t
 end
@@ -41,6 +46,7 @@ function P.item(track, posQN, lenQN, notes, name, opts)
                  offs = opts.offs or 0, srcLen = opts.srcLen or (opts.offs or 0) + lenQN, alive = true }
   local item = { kind = "item", track = track, pos = posQN / qnPerSec(), len = lenQN / qnPerSec(),
                  take = take, ext = {}, loop = opts.loop and 1 or 0, color = opts.color or 0, vol = 1,
+                 mute = opts.mute and 1 or 0,
                  pooled = opts.pooled, file = opts.file, alive = true }
   take.item = item
   for _, n in ipairs(notes or {}) do
@@ -66,7 +72,7 @@ local function takeZeroQN(take) return take.item.pos * qnPerSec() - take.offs en
 
 local function itemParm(item, parm, value)
   local map = { D_POSITION = "pos", D_LENGTH = "len", B_LOOPSRC = "loop",
-                I_CUSTOMCOLOR = "color", D_VOL = "vol" }
+                I_CUSTOMCOLOR = "color", D_VOL = "vol", B_MUTE = "mute" }
   local field = map[parm]
   if not field then error("mock has no item parm " .. parm) end
   if value ~= nil then item[field] = value end
@@ -150,7 +156,7 @@ local api = {
     local take = { kind = "take", midi = true, notes = {}, ccs = {}, name = "", sorted = true,
                    offs = 0, srcLen = (t1 - t0) * qnPerSec(), alive = true }
     local item = { kind = "item", track = track, pos = t0, len = t1 - t0, take = take, ext = {},
-                   loop = 1, color = 0, vol = 1, alive = true }   -- REAPER loops new MIDI items
+                   loop = 1, color = 0, vol = 1, mute = 0, alive = true }   -- REAPER loops new MIDI items
     take.item = item
     track.items[#track.items + 1] = item
     return item
@@ -226,6 +232,63 @@ local api = {
     take.sorted = true
   end,
 
+  -- Tracks (Midi Suggester's mock, from the API docs)
+  CountTracks = function(_) return #P.tracks end,
+  GetTrack = function(_, i) return P.tracks[i + 1] end,
+  -- void InsertTrackAtIndex(integer idx, boolean wantDefaults)
+  InsertTrackAtIndex = function(idx, defaults)
+    local t = { kind = "track", name = "", items = {}, fx = 0, ext = {}, freemode = 0, alive = true }
+    table.insert(P.tracks, idx + 1, t)
+  end,
+  -- void DeleteTrack(MediaTrack tr): its items go with it.
+  DeleteTrack = function(track)
+    local i = indexOf(P.tracks, track)
+    if not i then error("deleting a track that is not in the project") end
+    table.remove(P.tracks, i)
+    track.alive = false
+    for _, it in ipairs(track.items) do
+      it.alive, it.take.alive = false, false
+      local s = indexOf(P.selected, it)
+      if s then table.remove(P.selected, s) end
+    end
+  end,
+  -- number GetMediaTrackInfo_Value(MediaTrack tr, string parmname)
+  GetMediaTrackInfo_Value = function(track, parm)
+    if parm == "IP_TRACKNUMBER" then return indexOf(P.tracks, track) or 0 end
+    if parm == "I_FREEMODE" then return track.freemode end
+    error("mock has no track parm " .. parm)
+  end,
+  -- boolean retval, string stringNeedBig = GetSetMediaTrackInfo_String(tr, parmname, string, set)
+  GetSetMediaTrackInfo_String = function(track, parm, value, set)
+    if parm == "P_NAME" then
+      if set then track.name = value end
+      return true, track.name
+    end
+    local key = parm:match("^P_EXT:(.+)$")
+    if key then
+      if set then track.ext[key] = value end
+      return true, track.ext[key] or ""
+    end
+    error("mock has no track string " .. parm)
+  end,
+  TrackFX_GetCount = function(track) return track.fx end,
+  -- void TrackFX_CopyToTrack(src_track, src_fx, dest_track, dest_fx, is_move)
+  TrackFX_CopyToTrack = function(src, fx, dest, destFx, move)
+    if move then error("the scripts copy FX, never move them") end
+    if fx >= src.fx then error("copying an FX the source does not have") end
+    dest.fx = dest.fx + 1
+    dest.copiedFrom = src
+  end,
+  TrackList_AdjustWindows = function(minor) end,
+
+  -- Transport
+  GetCursorPosition = function() return P.cursor end,
+  SetEditCurPos = function(t, moveview, seekplay) P.cursor = t end,
+  OnPlayButton = function() P.playing = true; P.playPos = P.cursor; P.calls.play = (P.calls.play or 0) + 1 end,
+  OnStopButton = function() P.playing = false; P.calls.stop = (P.calls.stop or 0) + 1 end,
+  GetPlayState = function() return P.playing and 1 or 0 end,
+  GetPlayPosition = function() return P.playPos end,
+
   -- Housekeeping
   Undo_BeginBlock = function() P.undoDepth = P.undoDepth + 1 end,
   Undo_EndBlock = function(name, flags)
@@ -245,7 +308,7 @@ local api = {
   SetExtState = function(s, k, v, persist) P.ext[s .. ":" .. k] = v end,
 }
 
--- REAPER refuses a deleted item or take outright - "bad argument #1 to
+-- REAPER refuses a deleted item, take or track outright - "bad argument #1 to
 -- 'GetSetMediaItemInfo_String' (MediaItem expected)" - so the mock does
 -- too, for every function but the one that asks whether it is still there.
 local ASKS = { ValidatePtr2 = true }
@@ -254,9 +317,10 @@ local function refuseDead(name, f)
   return function(...)
     for i = 1, select("#", ...) do
       local x = select(i, ...)
-      if type(x) == "table" and (x.kind == "item" or x.kind == "take") and x.alive == false then
+      if type(x) == "table" and (x.kind == "item" or x.kind == "take" or x.kind == "track")
+         and x.alive == false then
         error(("bad argument #%d to '%s' (Media%s expected): it was deleted"):format(
-          i, name, x.kind == "item" and "Item" or "Item_Take"), 2)
+          i, name, ({ item = "Item", take = "Item_Take", track = "Track" })[x.kind]), 2)
       end
     end
     return f(...)
@@ -281,6 +345,7 @@ function P.reset()
   P.tempo, P.num, P.den = 120, 4, 4
   P.undoDepth, P.undoNames, P.refreshDepth = 0, {}, 0
   P.calls = {}
+  P.cursor, P.playing, P.playPos = 0, false, 0
 end
 
 -- A take's notes as the engine would see them: quarter notes from the
