@@ -29,8 +29,11 @@ local function source(notes)
   return { notes = notes, lead = 0, beats = math.ceil(finish / 4 - 1e-9) * 4, barBeats = 4, pulse = 1 }
 end
 
+-- Develop (the bigger changes near 100%) is off unless a test turns it on:
+-- every older promise is about the small moves, and develop has its own.
 local function opts(changes)
   local o = V.defaults()
+  o.develop = false
   for k, x in pairs(changes or {}) do o[k] = x end
   return o
 end
@@ -724,6 +727,294 @@ for _, name in ipairs({ "twinkle", "noir", "drums", "run" }) do
     if #V.vary(src, an, qualityOnly(true), seed, T).moves > 0 then any = true end
   end
   ok(not any, name .. ": no chords, no chord-quality change")
+end
+
+------------------------------------------------------------------------------
+-- Developing the motif (near 100%)
+------------------------------------------------------------------------------
+
+local function developOnly(amount, keepEnds)
+  local o = feelOff(opts({ amount = amount or 1, develop = true }))
+  for _, k in ipairs(V.KINDS) do o[k.key] = false end
+  if keepEnds ~= nil then o.keepEnds = keepEnds end
+  return o
+end
+
+-- At or below DEVELOP_FROM, develop changes nothing at all: the same seed
+-- gives exactly the variation it gave before develop existed.
+for _, name in ipairs(NAMES) do
+  local src = source(F[name])
+  local an = V.analyse(src, T)
+  for _, amount in ipairs({ 0.2, 0.35, V.DEVELOP_FROM }) do
+    for seed = 1, 10 do
+      local off = V.vary(src, an, opts({ amount = amount }), seed, T)
+      local on = V.vary(src, an, opts({ amount = amount, develop = true }), seed, T)
+      if not eq(fingerprint(on.notes), fingerprint(off.notes),
+                ("%s at %d%%, seed %d: develop does nothing below %d%%"):format(
+                  name, amount * 100, seed, V.DEVELOP_FROM * 100)) then break end
+    end
+  end
+end
+
+-- Every fixture near and at 100% with develop on: still playable, in key,
+-- one change per moment, the ends kept, no new grinding clash, and drums
+-- never developed.
+local developed = {}
+for _, name in ipairs(NAMES) do
+  local src = source(F[name])
+  local an = V.analyse(src, T)
+  local origHarsh = harshTime(src.notes)
+  for _, amount in ipairs({ 0.85, 1 }) do
+    local _, cap = V.budget(amount, #src.notes)
+    for seed = 1, SEEDS do
+      local tag = ("%s at %d%% with develop, seed %d"):format(name, amount * 100, seed)
+      local var = V.vary(src, an, opts({ amount = amount, develop = true }), seed, T)
+      local bad
+      local moments, qualityChanged = {}, false
+      for _, c in ipairs(var.moves) do
+        if moments[c.event] then bad = "two changes on one moment" end
+        moments[c.event] = true
+        if c.kind == "quality" then qualityChanged = true end
+        if c.kind == "develop" then
+          developed[c.move] = (developed[c.move] or 0) + 1
+          developed[name] = true
+          -- Nothing else changes inside the developed stretch.
+          for _, d in ipairs(var.moves) do
+            if d ~= c and d.at >= c.from - 1e-6 and d.at < c.to - 1e-6 then bad = "a change inside a developed stretch" end
+          end
+        end
+      end
+      if #var.changes > cap then bad = "more changes than the cap" end
+      for _, n in ipairs(var.notes) do
+        if n.start < src.lead - 1e-9 or n.start + n.len > src.beats + 1e-9 then bad = "outside the item" end
+        if n.chan ~= 9 and not an.pcs[n.pitch % 12] then bad = "a note outside the key: " .. n.pitch end
+        if n.chan ~= 9 and (n.pitch < an.lo - 7 or n.pitch > an.hi + 7) then
+          bad = "a note far outside the original's range: " .. n.pitch
+        end
+      end
+      if harshTime(var.notes, qualityChanged) > origHarsh + 1.01 then bad = "a new grinding clash" end
+      for _, e in ipairs({ an.events[1], an.events[#an.events] }) do
+        for _, n in ipairs(e.notes) do
+          local found = false
+          for _, m in ipairs(var.notes) do
+            if m.pitch == n.pitch and math.abs(m.start - n.start) < 0.13 then found = true end
+          end
+          if not found then bad = "the first or last note lost" end
+        end
+      end
+      if not ok(not bad, tag .. ": " .. tostring(bad or "fine")) then break end
+    end
+  end
+end
+for _, move in ipairs(V.DEVELOP.moves) do
+  ok((developed[move[1]] or 0) > 0, "the " .. move[1] .. " develop move is reached by some fixture")
+end
+ok(not developed.drums, "drums are never developed")
+
+-- How often: never at DEVELOP_FROM, sometimes just above, most of the time
+-- at 100% - and the further up, the longer the stretch.
+do
+  local src = source(F.noir)
+  local an = V.analyse(src, T)
+  local function share(amount)
+    local k, span = 0, 0
+    for seed = 1, 200 do
+      for _, c in ipairs(V.vary(src, an, opts({ amount = amount, develop = true }), seed, T).moves) do
+        if c.kind == "develop" then k, span = k + 1, span + (c.to - c.from) end
+      end
+    end
+    return k / 200, k > 0 and span / k or 0
+  end
+  local at75, span75 = share(0.75)
+  local at100, span100 = share(1)
+  ok(at75 > 0.05 and at75 < 0.5, ("just above %d%%, some variations are developed (%.2f)"):format(V.DEVELOP_FROM * 100, at75))
+  ok(at100 > 0.6, ("at 100%%, most are (%.2f)"):format(at100))
+  ok(span100 > span75 + 2, ("and the stretch grows with the amount (%.1f beats vs %.1f)"):format(span100, span75))
+  local off = 0
+  for seed = 1, 100 do
+    for _, c in ipairs(V.vary(src, an, opts({ amount = 1, develop = false }), seed, T).moves) do
+      if c.kind == "develop" then off = off + 1 end
+    end
+  end
+  eq(off, 0, "Develop switched off: never")
+end
+
+-- Each develop move does what it says. Twinkle, every other kind off and
+-- the ends free, so each variation is one develop move alone on a plain
+-- melody: the notes inside the stretch, before and after, compared.
+do
+  local src = source(F.twinkle)
+  local an = V.analyse(src, T)
+  local L = {}
+  for pc = 0, 11 do if an.scale[pc] then L[#L + 1] = pc end end
+  local function pos(p)
+    for i = #L, 1, -1 do if L[i] == p % 12 then return (p // 12) * #L + i - 1 end end
+  end
+  local function inside(notes, c)
+    local out = {}
+    for _, n in ipairs(notes) do if n.start >= c.from - 1e-6 and n.start < c.to - 1e-6 then out[#out + 1] = n end end
+    table.sort(out, function(a, b) return a.start < b.start end)
+    return out
+  end
+  local checked = {}
+  for seed = 1, 300 do
+    local var = V.vary(src, an, developOnly(1, false), seed, T)
+    local c = var.moves[1]
+    if c then
+      local before, after = inside(src.notes, c), inside(var.notes, c)
+      local tag = ("Twinkle, %s (seed %d)"):format(c.move, seed)
+      if c.move ~= "fragment" then
+        eq(#after, #before, tag .. ": as many notes")
+        for i, n in ipairs(after) do
+          ok(math.abs(n.start - before[i].start) < 1e-9 and math.abs(n.len - before[i].len) < 1e-9,
+             tag .. ": in the same rhythm")
+        end
+      end
+      local P, Q = {}, {}
+      for i, n in ipairs(before) do P[i] = pos(n.pitch) end
+      for i, n in ipairs(after) do Q[i] = pos(n.pitch) end
+      if c.move == "transpose" then
+        for i = 2, #Q do eq(Q[i] - P[i], Q[1] - P[1], tag .. ": every note moved by the same steps") end
+        ok(Q[1] ~= P[1], tag .. ": and moved")
+      elseif c.move == "invert" then
+        local axis2 = P[1] + Q[1]
+        for i = 2, #Q do eq(P[i] + Q[i], axis2, tag .. ": mirrored around one note") end
+      elseif c.move == "retrograde" then
+        for i = 1, #Q do eq(after[i].pitch, before[#before + 1 - i].pitch, tag .. ": the pitches in reverse order") end
+      elseif c.move == "stretch" then
+        for i = 2, #Q do eq(Q[i] - Q[1], 2 * (P[i] - P[1]), tag .. ": every interval from the first doubled") end
+      elseif c.move == "squeeze" then
+        for i = 2, #Q do
+          local a, b = P[i] - P[1], Q[i] - Q[1]
+          ok((a == 0 and b == 0) or (a * b > 0 and math.abs(b) <= math.abs(a)),
+             tag .. ": every interval the same way, no wider")
+        end
+      elseif c.move == "fragment" then
+        local half = (c.to - c.from) / 2
+        local first, second = {}, {}
+        for _, n in ipairs(after) do
+          if n.start < c.from + half - 1e-6 then first[#first + 1] = n else second[#second + 1] = n end
+        end
+        eq(#second, #first, tag .. ": the second half as many notes as the first")
+        for i, n in ipairs(second) do
+          ok(math.abs(n.start - first[i].start - half) < 1e-9, tag .. ": in the first half's rhythm")
+          eq(math.abs(pos(n.pitch) - pos(first[i].pitch)), 1, tag .. ": a step away")
+        end
+      end
+      checked[c.move] = true
+    end
+  end
+  for _, move in ipairs(V.DEVELOP.moves) do ok(checked[move[1]], "Twinkle: " .. move[1] .. " checked") end
+end
+
+-- With chords under a tune, only the tune is inverted, reversed or
+-- stretched: every note that is not the tune stays, and the tune stays on
+-- top. The tune is the highest note struck at a moment, if nothing held
+-- over from before sounds above it - the walking bass is not a tune.
+for _, name in ipairs({ "piano", "strummed", "walking", "popChords" }) do
+  local src = source(F[name])
+  local an = V.analyse(src, T)
+  local tuneNote = {}
+  for _, e in ipairs(an.events) do
+    local top, under = e.notes[#e.notes], false
+    for _, o in ipairs(src.notes) do
+      if o.start < e.start - 1e-6 and o.start + o.len > e.start + 1e-6 and o.pitch > top.pitch then under = true end
+    end
+    if not under then tuneNote[("%d@%.4f"):format(top.pitch, top.start)] = true end
+  end
+  local seen = 0
+  for seed = 1, 120 do
+    local var = V.vary(src, an, developOnly(1, false), seed, T)
+    local c = var.moves[1]
+    if c and c.move ~= "transpose" then
+      seen = seen + 1
+      local tag = ("%s, %s (seed %d)"):format(name, c.move, seed)
+      local have = {}
+      for _, n in ipairs(var.notes) do have[("%d@%.4f"):format(n.pitch, n.start)] = true end
+      local bad
+      for _, n in ipairs(src.notes) do
+        local k = ("%d@%.4f"):format(n.pitch, n.start)
+        if not tuneNote[k] and not have[k] then bad = "a note under the tune changed" end
+      end
+      for _, e in ipairs(an.events) do
+        local top = e.notes[#e.notes]
+        if tuneNote[("%d@%.4f"):format(top.pitch, top.start)] and #e.notes > 1 then
+          local hi = -1
+          for _, n in ipairs(var.notes) do if math.abs(n.start - e.start) < 1e-6 then hi = math.max(hi, n.pitch) end end
+          if hi <= e.notes[#e.notes - 1].pitch then bad = "the tune fell into the chord" end
+        end
+      end
+      if not ok(not bad, tag .. ": " .. tostring(bad or "fine")) then break end
+    end
+  end
+  ok(seen > 0 or name == "popChords", name .. ": its tune is developed (" .. seen .. ")")
+end
+
+-- A series spreads its develop moves: with its memory, a series of six at
+-- 100% uses more different ones than six made without it.
+do
+  local src = source(F.noir)
+  local an = V.analyse(src, T)
+  local o = feelOff(opts({ amount = 1, develop = true }))
+  local function kinds(run)
+    local seen, k = {}, 0
+    for _, var in ipairs(run) do
+      for _, c in ipairs(var.moves) do
+        if c.kind == "develop" and not seen[c.move] then seen[c.move], k = true, k + 1 end
+      end
+    end
+    return k
+  end
+  local with, without = 0, 0
+  for base = 1, 40 do
+    with = with + kinds(V.series(src, an, o, base, 6, T))
+    local alone = {}
+    for i = 1, 6 do alone[i] = V.vary(src, an, o, V.seedFor(base, i - 1), T) end
+    without = without + kinds(alone)
+  end
+  ok(with > without + 10, ("a series spreads its develop moves (%d kinds, %d without memory)"):format(with, without))
+end
+
+-- A tune close over its chords, and chords with a step inside them (Cadd9,
+-- Gadd9): the tune never falls into the chord, and a sequence never moves
+-- a chord to where its step becomes a semitone (Gadd9 up a third in C is
+-- B C F).
+do
+  local notes = {}
+  for b, ch in ipairs({ { 48, 55, 60, 62 }, { 43, 50, 55, 57 }, { 45, 52, 57, 59 }, { 48, 55, 60, 62 } }) do
+    for _, p in ipairs(ch) do notes[#notes + 1] = { pitch = p, start = (b - 1) * 4, len = 4, vel = 90 } end
+  end
+  for i, p in ipairs({ 67, 65, 64, 67, 62, 64, 65, 62, 64, 67, 65, 64, 67, 69, 67, 65 }) do
+    notes[#notes + 1] = { pitch = p, start = i - 1, len = 1, vel = 100 }
+  end
+  local src = source(notes)
+  local an = V.analyse(src, T)
+  local origHarsh = harshTime(src.notes)
+  local moves = {}
+  for seed = 1, 150 do
+    local var = V.vary(src, an, developOnly(1, false), seed, T)
+    local c = var.moves[1]
+    if c then
+      moves[c.move] = true
+      local tag = ("close tune, %s (seed %d)"):format(c.move, seed)
+      ok(harshTime(var.notes) <= origHarsh + 1.01, tag .. ": no new grinding, inside a chord or out")
+      -- Every tune note (the short ones) above every chord note (held a
+      -- bar) sounding when it is struck.
+      if c.move ~= "transpose" then
+        local fell
+        for _, t in ipairs(var.notes) do
+          if t.len < 4 - 1e-6 then
+            for _, h in ipairs(var.notes) do
+              if h.len >= 4 - 1e-6 and h.start <= t.start + 1e-6 and h.start + h.len > t.start + 1e-6
+                 and h.pitch >= t.pitch then fell = t.pitch end
+            end
+          end
+        end
+        ok(not fell, tag .. ": the tune stays above its chord (" .. tostring(fell) .. ")")
+      end
+    end
+  end
+  ok(moves.transpose and moves.invert, "the close tune is inverted and sequenced")
 end
 
 C.done()

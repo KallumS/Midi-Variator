@@ -396,6 +396,65 @@ ok(has(g.texts, "drums"), "drums are recognised")
 ok(not has(g.buttons, "Notes"), "and get no Notes switch: a drum has no pitch to bend")
 checkInk("drums")
 
+-- Develop: only near the top of the slider, never for drums, and what it
+-- previews at 100% is what it makes.
+do
+  P.ext = {}
+  local tr = project("noir", "Noir")
+  start()
+  frame()
+  ok(not has(g.buttons, "Develop the motif"), "at 35% there is no Develop switch: no dead controls")
+  slide("##amount", 70)
+  ok(not has(g.buttons, "Develop the motif"), "nor at 70%, where it cannot happen")
+  slide("##amount", 100)
+  ok(has(g.buttons, "Develop the motif"), "at 100% there is")
+  eq(g.ink[buttonIndex("Develop the motif")].bg, 0xFFF200FF, "on by default")
+  ok(has(g.texts, "and now and then a stretch developed"), "and the amount says so")
+  local seed = (1000 * 7 + 0 + 1 * 31) % 2147483000 + 1
+  local src = { notes = F.noir, lead = 0, beats = 32, barBeats = 4, pulse = 1 }
+  local o = V.defaults(); o.amount = 1
+  local expected = V.series(src, V.analyse(src, T), o, seed, 4, T, 1, {})
+  local developed = 0
+  for _, var in ipairs(expected) do
+    for _, c in ipairs(var.moves) do if c.kind == "develop" then developed = developed + 1 end end
+  end
+  ok(developed > 0, "set up: this batch has something developed")
+  click("Make 4 variations")
+  for i = 1, 4 do
+    eq(notesOfItem(tr.items[i + 1]), notesOfList(expected[i].notes),
+       ("at 100%%, variation %d is exactly the one previewed"):format(i))
+  end
+  -- What the list of changes shows across a few sets: developed or not.
+  local DEVELOPED = { "a sequence", "upside down", "reverse order", "intervals widened",
+                      "intervals narrowed", "first half again" }
+  local function anyDeveloped()
+    local found = false
+    for _ = 1, 3 do
+      for _ = 1, 4 do
+        frame()
+        for _, t in ipairs(g.texts) do
+          for _, w in ipairs(DEVELOPED) do if t:find(w, 1, true) then found = true end end
+        end
+        click(">")
+      end
+      click("New set")
+    end
+    return found
+  end
+  ok(anyDeveloped(), "on: the list shows stretches developed")
+  click("Develop the motif")
+  eq(g.ink[buttonIndex("Develop the motif")].bg, 0xA9AFBAFF, "switched off, it is grey")
+  ok(not anyDeveloped(), "off: none")
+  ok(not has(g.texts, "and now and then a stretch developed"), "and the amount no longer says so")
+  atexitFn()
+  ok(P.ext["MidiVariator:state"]:find("develop=0"), "and that is remembered")
+  P.ext = {}
+  project("drums", "Beat", 8)
+  start()
+  slide("##amount", 100)
+  ok(not has(g.buttons, "Develop the motif"), "drums are never developed: no switch")
+end
+
 -- Two items at once, on two tracks: each varied on its own.
 do
   P.reset()
@@ -610,6 +669,8 @@ local STATES = {
     function() click("Minor (Natural)"); toggle("Bring the original into this scale") end },
   { "own notes", function() project("twinkle", "Twinkle") end,
     function() click("Stay in the original's notes") end },
+  { "a melody at 100%", function() project("noir", "Noir") end,
+    function() slide("##amount", 100) end },
 }
 
 local reached = {}
@@ -643,7 +704,8 @@ for _, name in ipairs({ "Use selected items", "Notes", "Rhythm", "Add notes", "L
                         "Chord voicing", "Chord quality", "Timing", "Velocity", "Lengths", "Anywhere", "Towards the end", "Towards the start",
                         "<", ">", "New set", "Make 4 variations", "Vary selected in place",
                         "Put back the original", "Stay in the original's notes", "Back to what it heard",
-                        "Db", "B", "Major", "Minor Pentatonic", "Diminished Half-Whole" }) do
+                        "Db", "B", "Major", "Minor Pentatonic", "Diminished Half-Whole",
+                        "Develop the motif" }) do
   ok(reached[name], "the sweep reached '" .. name .. "'")
 end
 

@@ -109,13 +109,14 @@ end
 
 -- Preferences, kept between runs. What the source is belongs to the
 -- project, so it is not saved.
-local st = { amount = 35, focus = 1, keepEnds = 1, grow = 0, count = 4, own = 0, fit = 1, outside = 0 }
+local st = { amount = 35, focus = 1, keepEnds = 1, grow = 0, count = 4, own = 0, fit = 1, outside = 0,
+             develop = 1 }
 for _, k in ipairs(V.KINDS) do st[k.key] = 1 end
 for _, f in ipairs(V.FEELS) do st[f.key] = 1 end
 
 local LIMITS = { amount = { 0, 100 }, focus = { 1, #V.FOCUS }, keepEnds = { 0, 1 },
                  grow = { 0, 1 }, count = { 1, 16 }, own = { 0, 1 }, fit = { 0, 1 },
-                 outside = { 0, 1 } }
+                 outside = { 0, 1 }, develop = { 0, 1 } }
 for _, k in ipairs(V.KINDS) do LIMITS[k.key] = { 0, 1 } end
 for _, f in ipairs(V.FEELS) do LIMITS[f.key] = { 0, 1 } end
 
@@ -166,6 +167,7 @@ local function options()
   o.keepEnds = st.keepEnds == 1
   o.grow = st.grow == 1
   o.outside = st.outside == 1
+  o.develop = st.develop == 1
   for _, k in ipairs(V.KINDS) do o[k.key] = st[k.key] == 1 end
   for _, f in ipairs(V.FEELS) do o[f.key] = st[f.key] == 1 end
   return o
@@ -253,6 +255,11 @@ end
 local function allDrums()
   for _, an in ipairs(ui.ans or {}) do if not an.drums then return false end end
   return true
+end
+
+-- Develop can happen: high enough on the slider, and something with pitches.
+local function canDevelop()
+  return st.amount > V.DEVELOP_FROM * 100 + 1e-9 and not allDrums()
 end
 
 local function sourcesAlive()
@@ -569,6 +576,7 @@ local function drawChanges()
     local about = math.max(1, math.floor(want + 0.5))
     words = ("%s - about %s in %d notes"):format(words, plural(about, "change"), #ui.srcs[1].notes)
   end
+  if canDevelop() and st.develop == 1 then words = words .. ", and now and then a stretch developed" end
   dim(words)
 
   local hints = {
@@ -611,6 +619,19 @@ local function drawChanges()
         "in C major, G7 can become G9 or G13, C can become Cmaj7 or C6.\n" ..
         "On: it may borrow notes from outside - C can become Cmin or Caug,\n" ..
         "G7 can become G7b9, Amin can become Adim.")
+  end
+
+  -- Only near the top of the slider, where it can happen, and not for drums.
+  if canDevelop() then
+    ImGui.Dummy(ctx, 1, 1)
+    ImGui.SameLine(ctx, LABEL_W)
+    switch("develop", "Develop the motif",
+           "Near 100%, now and then a variation takes a stretch of the music - a\n" ..
+           "bar or two, or at 100% most of it - and develops it the way a composer\n" ..
+           "brings a motif back: turned upside down, played in reverse order, moved\n" ..
+           "up or down the scale (a sequence), its intervals widened or narrowed, or\n" ..
+           "its first half repeated a step lower. The rhythm stays, so it is still\n" ..
+           "recognisable, and the first and last notes stay when kept.")
   end
 
   label("Feel")
