@@ -21,7 +21,8 @@ described in chord names.
 **The chord is read by ScaleView Pro's chord reader.** `mv_theory` became
 the whole of Midi Suggester's `ms_theory` (it was only the key half), still
 copied unchanged. Its chord reader is ScaleView Pro's, and was checked line
-for line against `ScaleView Pro.lua` at `e31a6e8`. So a chord is read and
+for line against `ScaleView Pro.lua` at `e31a6e8` (re-copied from `f9e2691`
+on 7 October 2026 - see below). So a chord is read and
 named exactly as in ScaleView Pro and Midi Suggester, and the list of
 changes says "G7 became G9" in the same words.
 
@@ -60,7 +61,10 @@ so saved preferences still load.
 ## Consequences
 
 ScaleView Pro's names are its own: a seventh plus a thirteenth reads
-"G7(13)", and G A D F G reads "DminAdd11/G". They are not retuned here.
+"G7(13)", and G A D F G reads "G7sus2" (it read "DminAdd11/G" until
+ScaleView Pro's tiebreak changed on 7 October 2026). They are not retuned here.
+Because a change is applied from the root the reader finds, a change to the
+reader changes the variations too - see CLAUDE.md, *Chord quality*.
 
 A changed chord can put the tune's note in a new light - a melody C over a
 C chord that becomes Cmaj7 - which is the intent; it never places a new
