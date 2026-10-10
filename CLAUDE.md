@@ -158,6 +158,13 @@ ScaleView is a simplified version). `mv_theory` is now the whole of
 `T.nameChord(pitches, key)` returns the symbol, the root's pitch class and the
 bass's.
 
+**Re-copied 10 October 2026** (Suggester's `4577b87`, Pro's `df4ea43`):
+Starting Blocks' chords decide which roots a chord can have. Every variation
+of every fixture at four amounts and 40 seeds - 2,240 - came out note for
+note and word for word as before: the fixtures' chords read the same. A
+chord that is a Blocks chord on another root would now change from that
+root.
+
 **Re-copied 7 October 2026** for two changes made in Pro, and both change what
 the variator does, not only what it prints, because a quality change is
 applied from the root the reader finds:
