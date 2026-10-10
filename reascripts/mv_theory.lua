@@ -3,14 +3,17 @@
      Pure Lua. Nothing in this file touches REAPER or ImGui.
 
      Everything below the line is copied UNCHANGED from Midi Suggester's
-     reascripts/ms_theory.lua at commit 6ed412b, comments and all:
+     reascripts/ms_theory.lua at commit 4577b87, comments and all:
 
        - Keys: ScaleView for REAPER's roots and seven-note scales.
        - Finding the key, with weights tuned on fifteen tunes there.
        - Naming a chord: ScaleView Pro's chord reader - the definitive one;
          ScaleView (not Pro) is a simplified version. Midi Suggester carries
          it unchanged, and its CORE_RANK-to-analyse block is
-         reascripts/ScaleView Pro.lua's at f9e2691, verbatim.
+         reascripts/ScaleView Pro.lua's at f9e2691, verbatim. Since
+         ScaleView Pro's df4ea43 it also takes Starting Blocks' chords as
+         its dictionary: notes that are a Blocks chord are named on one of
+         Blocks' roots for them.
          The variator uses it to find a chord's root before changing its
          quality, and to say what it became ("Bar 2: G7 became G9") in
          ScaleView Pro's own words.
@@ -645,6 +648,90 @@ local function readAsRootPosition(key, root, bass, voices)
   return root == key.degreePc[0] or root == key.degreePc[2] or root == key.degreePc[4]
 end
 
+--[[  Blocks' chords: which roots a chord can have - ScaleView Pro's, at
+      ScaleView-for-Reaper `df4ea43`. Starting Blocks builds its chords from
+      chord types stacked on a root and from the key's own chords on its
+      degrees, and is the dictionary: where the notes are a Blocks chord, the
+      name is on one of Blocks' roots for them, the reader's cost choosing
+      between them. A chord type counts on any root, in any inversion; the
+      key's chords on its degrees. Tables copied unchanged from Starting
+      Blocks' `sb_engine.lua` at `fc4dd32`, as Pro has them. ]]
+local BLOCKS_CHORDS = {
+  {0,4,7}, {0,3,7}, {0,3,6}, {0,4,8}, {0,4,6}, {0,7},
+  {0,4,7,9}, {0,3,7,9}, {0,4,7,9,14}, {0,3,7,9,14}, {0,4,7,10}, {0,4,7,11},
+  {0,3,7,10}, {0,3,7,11}, {0,3,6,10}, {0,3,6,9}, {0,4,8,10}, {0,4,8,11},
+  {0,4,6,10}, {0,3,6,11}, {0,4,7,9,10},
+  {0,4,7,10,14}, {0,4,7,11,14}, {0,3,7,10,14}, {0,3,7,11,14}, {0,4,7,10,14,17},
+  {0,4,7,11,14,17}, {0,3,7,10,14,17}, {0,4,7,10,14,17,21}, {0,4,7,11,14,17,21},
+  {0,3,7,10,14,17,21},
+  {0,4,7,10,13}, {0,4,7,10,15}, {0,4,7,10,18}, {0,4,7,10,20}, {0,4,8,10,13},
+  {0,4,8,10,15}, {0,4,6,10,13}, {0,4,8,10,13,15}, {0,4,7,10,13,21},
+  {0,4,7,11,18}, {0,3,6,10,14}, {0,4,8,10,14}, {0,4,6,10,14}, {0,4,7,10,14,18},
+  {0,4,8,11,18}, {0,4,6,10,13,21},
+  {0,2,7}, {0,5,7}, {0,5,7,10}, {0,5,7,10,14}, {0,5,7,11}, {0,4,7,14},
+  {0,3,7,14}, {0,4,5,7}, {0,4,7,17}, {0,4,7,21}, {0,2,4,7}, {0,2,3,7},
+  {0,5,10}, {0,5,10,15}, {0,7,14}, {0,2,4}, {0,1,2}, {0,2,4,5},
+  {0,6,10,16,21,26}, {0,4,6,7,10,13}, {0,6,10,15}, {0,5,10,15,19}, {0,5,6,7},
+  {0,1,6}, {0,6,7}, {0,1,4,5,8,9}, {0,7,9,13,16}, {0,8,11,16,21}, {0,4,10},
+  {0,4,6,10}, {0,4,7,10},
+}
+-- Scale degrees above the one chosen: triad, 7th, 9th, 11th, 13th, 6th,
+-- sus2, sus4, 5th.
+local BLOCKS_DIATONIC = {
+  {0,2,4}, {0,2,4,6}, {0,2,4,6,8}, {0,2,4,6,8,10}, {0,2,4,6,8,10,12},
+  {0,2,4,5}, {0,1,4}, {0,3,4}, {0,4},
+}
+
+-- A set of pitch classes as a 12-bit mask, read from a root.
+local function maskFrom(classes, root)
+  local mask = 0
+  for pc in pairs(classes) do mask = mask | (1 << ((pc - root) % 12)) end
+  return mask
+end
+
+-- Every chord type, as the pitch classes it holds above its root.
+local BLOCKS_TYPES = {}
+for _, shape in ipairs(BLOCKS_CHORDS) do
+  local mask = 0
+  for _, interval in ipairs(shape) do mask = mask | (1 << (interval % 12)) end
+  BLOCKS_TYPES[mask] = true
+end
+
+-- The key's own chords, built once per key and kept on it.
+local function blocksKeyChords(key)
+  if not key.blocksChords then
+    local intervals, chords = M.SCALES[key.scale].iv, {}
+    local n = #intervals
+    local function pitch(degree)
+      local octave = degree // n
+      return key.tonic + intervals[degree - octave * n + 1] + 12 * octave
+    end
+    for degree = 0, n - 1 do
+      local root = pitch(degree) % 12
+      for _, offsets in ipairs(BLOCKS_DIATONIC) do
+        local mask = 0
+        for _, o in ipairs(offsets) do mask = mask | (1 << (pitch(degree + o) % 12)) end
+        chords[mask] = chords[mask] or {}
+        chords[mask][root] = true
+      end
+    end
+    key.blocksChords = chords
+  end
+  return key.blocksChords
+end
+
+-- The roots Blocks builds these notes on, or nil if it builds them on none.
+local function blocksRoots(classes, key)
+  local roots, any = {}, false
+  local inKey = blocksKeyChords(key)[maskFrom(classes, 0)] or {}
+  for root = 0, 11 do
+    if classes[root] and (inKey[root] or BLOCKS_TYPES[maskFrom(classes, root)]) then
+      roots[root], any = true, true
+    end
+  end
+  return any and roots or nil
+end
+
 --[[  pitches: a list of MIDI note numbers sounding together. Returns the
       symbol, the root's pitch class and the bass's pitch class. Where the
       notes are an interval rather than a chord, the symbol reads them out and
@@ -678,6 +765,42 @@ function M.nameChord(pitches, key)
       name = name .. "/" .. chordNoteName(key, bass)
     end
     return name
+  end
+
+  --[[  A Blocks chord is named on one of Blocks' roots for it, chosen the way
+      the reader below chooses - the cheaper reading, then the key, then no
+      slash, then the commoner quality - two notes as the reader names two
+      notes from a root. ]]
+  local blocks = blocksRoots(classes, key)
+  if blocks then
+    local pick
+    for root = 0, 11 do
+      if blocks[root] then
+        local has = {}
+        for pc = 0, 11 do
+          if classes[pc] then has[(pc - root) % 12] = true end
+        end
+        local quality, cost, rank = analyse(has, root, bass)
+        if count == 2 then
+          quality = (has[7] and "5") or (has[4] and "maj(no5)")
+                 or (has[3] and "min(no5)") or quality
+        end
+        local fit = key.pcs[root] and 100 or 0
+        for pc = 0, 11 do
+          if classes[pc] and key.pcs[pc] then fit = fit + 1 end
+        end
+        local slash = root ~= bass
+        if not pick or cost < pick.cost
+           or (cost == pick.cost and fit > pick.fit)
+           or (cost == pick.cost and fit == pick.fit and pick.slash and not slash)
+           or (cost == pick.cost and fit == pick.fit and slash == pick.slash
+               and rank < pick.rank) then
+          pick = { root = root, cost = cost, fit = fit, slash = slash,
+                   rank = rank, quality = quality }
+        end
+      end
+    end
+    return slashed(pick.root, chordNoteName(key, pick.root) .. pick.quality), pick.root, bass
   end
 
   -- Two notes are an interval, except a bare fifth and a third.
