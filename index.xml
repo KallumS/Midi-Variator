@@ -66,6 +66,13 @@
         <source file="mv_vary.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/4f1778aac743b50b15db3ae8a2eb2ea118918d38/reascripts/mv_vary.lua</source>
         <source file="mv_place.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/4f1778aac743b50b15db3ae8a2eb2ea118918d38/reascripts/mv_place.lua</source>
       </version>
+      <version name="1.4" author="kallums" time="2026-10-15T18:00:00Z">
+        <changelog><![CDATA[Follows Apple's design guidelines for Mac apps: View > Text Size makes everything up to twice the size (Cmd+= and Cmd+-), the keyboard alone can move round the window and click (Tab, arrows, Space), every word is easier to read against the dark background, buttons are the Mac's size with more room between them and wrap onto new rows when the window is narrow, a chosen button has a bar under its name as well as being yellow, and messages appear at the top until you dismiss them.]]></changelog>
+        <source main="main" file="Midi Variator.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/6a62e6c2df86e21942f7ab9cb7fa673948f405c0/reascripts/Midi%20Variator.lua</source>
+        <source file="mv_theory.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/6a62e6c2df86e21942f7ab9cb7fa673948f405c0/reascripts/mv_theory.lua</source>
+        <source file="mv_vary.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/6a62e6c2df86e21942f7ab9cb7fa673948f405c0/reascripts/mv_vary.lua</source>
+        <source file="mv_place.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/6a62e6c2df86e21942f7ab9cb7fa673948f405c0/reascripts/mv_place.lua</source>
+      </version>
     </reapack>
 
   </category>
