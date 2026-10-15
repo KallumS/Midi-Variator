@@ -59,6 +59,13 @@
         <source file="mv_vary.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/9ba83d90552bccc7bfc040f89919e65166999d76/reascripts/mv_vary.lua</source>
         <source file="mv_place.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/9ba83d90552bccc7bfc040f89919e65166999d76/reascripts/mv_place.lua</source>
       </version>
+      <version name="1.3.1" author="kallums" time="2026-10-15T12:00:00Z">
+        <changelog><![CDATA[Wording in the window follows Apple's writing guidelines: buttons read Use Selected Items, Make 4 Variations, Vary Selected in Place and Put Back the Original, the switches are in title style (Add Notes, Chord Quality, Towards the End, All New), and messages say what to do next. Chords are now read by ScaleView Pro's latest reader, which names a chord the way Starting Blocks builds it where it can.]]></changelog>
+        <source main="main" file="Midi Variator.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/4f1778aac743b50b15db3ae8a2eb2ea118918d38/reascripts/Midi%20Variator.lua</source>
+        <source file="mv_theory.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/4f1778aac743b50b15db3ae8a2eb2ea118918d38/reascripts/mv_theory.lua</source>
+        <source file="mv_vary.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/4f1778aac743b50b15db3ae8a2eb2ea118918d38/reascripts/mv_vary.lua</source>
+        <source file="mv_place.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/4f1778aac743b50b15db3ae8a2eb2ea118918d38/reascripts/mv_place.lua</source>
+      </version>
     </reapack>
 
   </category>
