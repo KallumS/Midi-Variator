@@ -355,7 +355,7 @@ end
 
 --[[  Variations after each source. `jobs` is a list of { src, list of note
       lists }. One undo step; the new items end up selected, so pressing
-      "Vary selected again" re-rolls just them.
+      "Vary Selected in Place" re-rolls just them.
 
       Returns OK and how many were made, or FAILED. ]]
 function M.make(jobs)
@@ -370,14 +370,14 @@ function M.make(jobs)
       if not item then
         -- All or nothing: take away what was made, and still close the block.
         for _, it in ipairs(made) do reaper.DeleteTrackMediaItem(reaper.GetMediaItem_Track(it), it) end
-        finish("Midi Variator: make variations", nil)
+        finish("Midi Variator: Make Variations", nil)
         return M.FAILED, 0
       end
       made[#made + 1] = item
     end
   end
   if #made > 0 then selectOnly(made) end
-  finish("Midi Variator: make variations", made)
+  finish("Midi Variator: Make Variations", made)
   return M.OK, #made
 end
 
@@ -447,7 +447,7 @@ function M.varyGroupsInPlace(items, notesFor, together)
     end
   end
   if #out > 0 then selectOnly(out) end
-  finish("Midi Variator: vary in place", out)
+  finish("Midi Variator: Vary in Place", out)
   return #out > 0 and M.OK or M.NOTHING, #out
 end
 
@@ -466,7 +466,7 @@ function M.restore(items)
     end
   end
   if #out > 0 then selectOnly(out) end
-  finish("Midi Variator: put back the original", out)
+  finish("Midi Variator: Put Back the Original", out)
   return #out > 0 and M.OK or M.NOTHING, #out
 end
 
@@ -491,7 +491,7 @@ end
 ------------------------------------------------------------------------------
 
 M.AUDITION = "P_EXT:MidiVariatorAudition"
-M.AUDITION_NAME = "Midi Variator audition"
+M.AUDITION_NAME = "Midi Variator Audition"
 
 local audition = { items = {}, tracks = {}, muted = {}, srcs = {} }
 M.audition = audition

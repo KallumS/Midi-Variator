@@ -80,17 +80,17 @@ M.DRUM_CHANNEL = 9
 M.KINDS = {
   { key = "notes",   name = "Notes",           moves = { { "neighbour", 4 }, { "octave", 0.7 } } },
   { key = "rhythm",  name = "Rhythm",          moves = { { "split", 1.5 }, { "shift", 1.5 }, { "join", 1 } } },
-  { key = "add",     name = "Add notes",       moves = { { "passing", 2 }, { "grace", 1 }, { "pickup", 1 }, { "fill", 2 }, { "ghost", 2 } } },
-  { key = "remove",  name = "Leave notes out", moves = { { "drop", 2 }, { "thin", 2 } } },
-  { key = "chords",  name = "Chord voicing",   moves = { { "revoice", 2 }, { "roll", 1 } } },
-  { key = "quality", name = "Chord quality",   moves = { { "quality", 4 }, { "colour", 1 }, { "arpeggio", 4 } } },
+  { key = "add",     name = "Add Notes",       moves = { { "passing", 2 }, { "grace", 1 }, { "pickup", 1 }, { "fill", 2 }, { "ghost", 2 } } },
+  { key = "remove",  name = "Leave Notes Out", moves = { { "drop", 2 }, { "thin", 2 } } },
+  { key = "chords",  name = "Chord Voicing",   moves = { { "revoice", 2 }, { "roll", 1 } } },
+  { key = "quality", name = "Chord Quality",   moves = { { "quality", 4 }, { "colour", 1 }, { "arpeggio", 4 } } },
 }
 M.FEELS = {
   { key = "timing",   name = "Timing" },
   { key = "velocity", name = "Velocity" },
   { key = "lengths",  name = "Lengths" },
 }
-M.FOCUS = { "Anywhere", "Towards the end", "Towards the start" }
+M.FOCUS = { "Anywhere", "Towards the End", "Towards the Start" }
 
 -- The options a caller starts from. Every kind and feel is on.
 function M.defaults()
@@ -510,7 +510,7 @@ function M.describeFit(moved, from, scale)
   local parts = {}
   for _, m in ipairs(moved) do
     local a = from and from.names[m.from] or tostring(m.from)
-    parts[#parts + 1] = a .. " -> " .. scale.names[m.to]
+    parts[#parts + 1] = a .. " → " .. scale.names[m.to]
   end
   return table.concat(parts, ", ")
 end
@@ -1127,7 +1127,7 @@ end
         drop  a chord tone (C7 -> C)
 
       Every note a rule would add must be in the scale unless the
-      "Chord changes may leave the scale" box is ticked (opts.outside).
+      "Chord Changes May Leave the Scale" box is ticked (opts.outside).
       The bass is never moved or dropped, and a dropped note is never the
       top one, so the chord keeps its footing and its outline. ]]
 M.QUALITY_RULES = {
@@ -1388,7 +1388,7 @@ local function spanName(v, t0, t1)
     if half then return ("Bar %d, first half"):format(b0 + 1) end
     return ("Bar %d"):format(b0 + 1)
   end
-  return ("Bars %d-%d"):format(b0 + 1, b1 + 1)
+  return ("Bars %d–%d"):format(b0 + 1, b1 + 1)
 end
 
 --[[  An arpeggiated chord changed in quality: the same rules, applied to
@@ -1890,12 +1890,12 @@ end
 
 function DEVELOP.stretch(v, L, line)
   if not scaleIntervals(v, L, line, 2) then return nil end
-  return "its intervals widened - steps become thirds"
+  return "its intervals widened — steps become thirds"
 end
 
 function DEVELOP.squeeze(v, L, line)
   if not scaleIntervals(v, L, line, 0.5) then return nil end
-  return "its intervals narrowed - leaps become steps"
+  return "its intervals narrowed — leaps become steps"
 end
 
 -- How many pairs of these notes grind while sounding together, at their
@@ -1979,7 +1979,7 @@ function DEVELOP.transpose(v, L, line)
         local d = new[line[1].top] - line[1].top.pitch
         for n, q in pairs(new) do n.pitch = q end
         local what = #line[1].notes > 1 and "the music" or "the tune"
-        return ("%s moved %s %s - a sequence"):format(what, best > 0 and "up" or "down", distance(L, best, d))
+        return ("%s moved %s %s — a sequence"):format(what, best > 0 and "up" or "down", distance(L, best, d))
       end
     end
   end
@@ -2409,13 +2409,13 @@ end
       variations, A', A'', A'''. A number that has played before is an
       echo: the same changes, with a feel of its own. ]]
 M.FORMS = {
-  { name = "All new",      hint = "A new variation every time.",
+  { name = "All New",      hint = "A new variation every time.",
     slot = function(i) return i end },
-  { name = "Home between", hint = "The original comes back between the variations, played afresh.",
+  { name = "Home Between", hint = "The original comes back between the variations, played afresh.",
     slot = function(i) return i % 2 == 0 and 0 or (i + 1) // 2 end },
-  { name = "In pairs",     hint = "Each variation stated, then echoed: the same changes, played afresh.",
+  { name = "In Pairs",     hint = "Each variation stated, then echoed: the same changes, played afresh.",
     slot = function(i) return (i + 1) // 2 end },
-  { name = "A refrain",    hint = "The first variation keeps coming back between new ones.",
+  { name = "A Refrain",    hint = "The first variation keeps coming back between new ones.",
     slot = function(i) return i % 2 == 1 and 1 or i // 2 + 1 end },
 }
 
@@ -2434,7 +2434,7 @@ end
       before it. With `grow`, the first ones are gentler and the last one
       gets the full amount, so a repeated motif can build. `history` may be
       passed in to carry on from an earlier batch of the same original.
-      `opts.form` picks a form (M.FORMS; All new when nil). `skips[i]`, if
+      `opts.form` picks a form (M.FORMS; All New when nil). `skips[i]`, if
       given, is the set of changes unticked in the i-th; an echo follows
       the place it echoes, so its own entry is never read.
 

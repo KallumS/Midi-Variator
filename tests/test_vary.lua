@@ -479,7 +479,7 @@ do
   local heard = V.analyse(source(F.twinkle), T).heardKey
   local cm = V.pickedScale(T, T.rootIndex("C"), V.scaleIndex("Minor (Natural)"))
   local notes, moved = V.fit(F.twinkle, cm, heard)
-  eq(V.describeFit(moved, heard, cm), "E -> Eb, A -> Ab", "C major into C minor: the third and sixth fall")
+  eq(V.describeFit(moved, heard, cm), "E → Eb, A → Ab", "C major into C minor: the third and sixth fall")
   eq(#notes, #F.twinkle, "and no note is lost")
   for i, n in ipairs(notes) do
     ok(cm.pcs[n.pitch % 12], "every note is in C minor")
@@ -498,7 +498,7 @@ do
   eq(heardMinor.label, "C Minor (Natural)", "set up: heard in C minor")
   local cmaj = V.pickedScale(T, T.rootIndex("C"), V.scaleIndex("Major"))
   local _, movedUp = V.fit(minor, cmaj, heardMinor)
-  eq(V.describeFit(movedUp, heardMinor, cmaj), "Eb -> E, Ab -> A, Bb -> B",
+  eq(V.describeFit(movedUp, heardMinor, cmaj), "Eb → E, Ab → A, Bb → B",
      "C minor into C major: each note rises to its own letter")
 
   -- Into a pentatonic, the nearest note wins; two notes landing on one
@@ -975,10 +975,10 @@ do
   local function formIndex(name)
     for i, f in ipairs(V.FORMS) do if f.name == name then return i end end
   end
-  eq(V.formLetters(formIndex("All new"), 4), "A' A'' A''' A(4)", "All new: a new one every time")
-  eq(V.formLetters(formIndex("Home between"), 4), "A' A A'' A", "Home between: A' A A'' A")
-  eq(V.formLetters(formIndex("In pairs"), 4), "A' A' A'' A''", "In pairs: A' A' A'' A''")
-  eq(V.formLetters(formIndex("A refrain"), 6), "A' A'' A' A''' A' A(4)", "A refrain: A' keeps coming back")
+  eq(V.formLetters(formIndex("All New"), 4), "A' A'' A''' A(4)", "All new: a new one every time")
+  eq(V.formLetters(formIndex("Home Between"), 4), "A' A A'' A", "Home between: A' A A'' A")
+  eq(V.formLetters(formIndex("In Pairs"), 4), "A' A' A'' A''", "In pairs: A' A' A'' A''")
+  eq(V.formLetters(formIndex("A Refrain"), 6), "A' A'' A' A''' A' A(4)", "A refrain: A' keeps coming back")
 
   local src = source(F.noir)
   local an = V.analyse(src, T)
@@ -988,7 +988,7 @@ do
     local plain = V.series(src, an, feelOff(opts({ amount = 0.6 })), seed, 6, T)
 
     -- Home between: the original exactly, where it comes home (feel off).
-    local home = V.series(src, an, feelOff(opts({ amount = 0.6, form = formIndex("Home between") })), seed, 6, T)
+    local home = V.series(src, an, feelOff(opts({ amount = 0.6, form = formIndex("Home Between") })), seed, 6, T)
     for i = 2, 6, 2 do
       ok(home[i].home, tag .. ": place " .. i .. " is home")
       eq(fingerprint(home[i].notes), orig, tag .. ": home is the original")
@@ -998,7 +998,7 @@ do
     ok(fingerprint(home[3].notes) ~= orig, tag .. ": and the third is a variation")
 
     -- In pairs: each echoed, the same notes with the feel off.
-    local pairs_ = V.series(src, an, feelOff(opts({ amount = 0.6, form = formIndex("In pairs") })), seed, 6, T)
+    local pairs_ = V.series(src, an, feelOff(opts({ amount = 0.6, form = formIndex("In Pairs") })), seed, 6, T)
     for i = 2, 6, 2 do
       eq(pairs_[i].echo, i - 1, tag .. ": place " .. i .. " echoes the one before")
       eq(fingerprint(pairs_[i].notes), fingerprint(pairs_[i - 1].notes), tag .. ": the same notes")
@@ -1006,7 +1006,7 @@ do
     ok(fingerprint(pairs_[3].notes) ~= fingerprint(pairs_[1].notes), tag .. ": and a new pair is new")
 
     -- A refrain: the first comes back at 3 and 5.
-    local refrain = V.series(src, an, feelOff(opts({ amount = 0.6, form = formIndex("A refrain") })), seed, 6, T)
+    local refrain = V.series(src, an, feelOff(opts({ amount = 0.6, form = formIndex("A Refrain") })), seed, 6, T)
     eq(fingerprint(refrain[3].notes), fingerprint(refrain[1].notes), tag .. ": the refrain at 3")
     eq(fingerprint(refrain[5].notes), fingerprint(refrain[1].notes), tag .. ": and at 5")
     ok(fingerprint(refrain[4].notes) ~= fingerprint(refrain[2].notes), tag .. ": with new ones between")
@@ -1016,7 +1016,7 @@ do
   -- pitches, a feel of its own.
   local differ = 0
   for seed = 1, 10 do
-    local run = V.series(src, an, opts({ amount = 0.6, form = formIndex("In pairs") }), seed, 2, T)
+    local run = V.series(src, an, opts({ amount = 0.6, form = formIndex("In Pairs") }), seed, 2, T)
     eq(table.concat(run[2].changes, "|"), table.concat(run[1].changes, "|"), "an echo has the same changes")
     local same = #run[1].notes == #run[2].notes
     for i, n in ipairs(run[1].notes) do
@@ -1028,11 +1028,11 @@ do
   ok(differ > 0, "but its own feel")
 
   -- Home, with the feel on, is the original's notes played afresh.
-  local run = V.series(src, an, opts({ amount = 0.6, form = formIndex("Home between") }), 3, 2, T)
+  local run = V.series(src, an, opts({ amount = 0.6, form = formIndex("Home Between") }), 3, 2, T)
   eq(V.likeness(src.notes, run[2].notes), 1, "home keeps every note of the original")
 
   -- An echo follows what was unticked in the one it echoes.
-  local o = feelOff(opts({ amount = 0.6, form = formIndex("In pairs") }))
+  local o = feelOff(opts({ amount = 0.6, form = formIndex("In Pairs") }))
   local full = V.series(src, an, o, 4, 2, T)
   local less = V.series(src, an, o, 4, 2, T, nil, nil, { [1] = { [full[1].moves[1].id] = true } })
   eq(#less[1].changes, #full[1].changes - 1, "unticked in the first of a pair")
@@ -1041,7 +1041,7 @@ do
   -- Only the first statements steer the series' memory: a pair series of
   -- four leaves it exactly as the two first statements alone would.
   local h1, h2 = {}, {}
-  local o2 = opts({ amount = 0.6, form = formIndex("In pairs") })
+  local o2 = opts({ amount = 0.6, form = formIndex("In Pairs") })
   V.series(src, an, o2, 4, 4, T, nil, h1)
   V.vary(src, an, o2, V.seedFor(4, 0), T, h2)
   V.vary(src, an, o2, V.seedFor(4, 2), T, h2)
