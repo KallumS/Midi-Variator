@@ -18,7 +18,7 @@
  *                 Needs ReaImGui, from the ReaTeam Extensions repository.
  * Author:         Kallum Shah
  * Links:          https://github.com/KallumS/Midi-Variator
- * Version:        1.3.1
+ * Version:        1.4
  * Provides:
  *   mv_theory.lua
  *   mv_vary.lua
@@ -80,6 +80,9 @@ local THEME = {
   { "Col_ScrollbarGrab",     0x585F6BFF },
   { "Col_ScrollbarGrabHovered", 0x6D7581FF },
   { "Col_ScrollbarGrabActive",  0xA9AFBAFF },
+  -- The keyboard's focus ring: near-white, because yellow means "on" and a
+  -- focused control need not be.
+  { "Col_NavHighlight",      0xF2F4F7FF },
 }
 
 local SELECTED  = 0xFFF200FF   -- the accent: a switch that is on, and the variation's notes
@@ -91,9 +94,12 @@ local ROLL_BEAT = 0x1E2228FF
 -- The original's notes in the roll: grey, so yellow only ever means the
 -- variation - what would be different.
 local SOURCE_NOTE = 0x6D7581FF
-local DIM       = 0x8A919CFF
+-- Secondary text and warnings are 7:1 against the ground, Apple's target
+-- for small text in a dark window (0015). The ramp's #8A919C was 4.7:1 and
+-- the house red #D2483F 3.4:1, so neither is used for words any more.
+local DIM       = 0xB0B6C0FF
 local PLAYHEAD  = 0xDDE1E7FF   -- where the audition has got to, in the roll
-local WARN      = 0xD2483FFF
+local WARN      = 0xFF9E96FF
 
 -- Shifts a colour towards white or black, keeping its alpha byte.
 local function shade(col, amount)
@@ -115,14 +121,14 @@ end
 -- Preferences, kept between runs. What the source is belongs to the
 -- project, so it is not saved.
 local st = { amount = 35, focus = 1, keepEnds = 1, grow = 0, count = 4, own = 0, fit = 1, outside = 0,
-             develop = 1, form = 1, together = 1 }
+             develop = 1, form = 1, together = 1, textSize = 1 }
 for _, k in ipairs(V.KINDS) do st[k.key] = 1 end
 for _, f in ipairs(V.FEELS) do st[f.key] = 1 end
 
 local LIMITS = { amount = { 0, 100 }, focus = { 1, #V.FOCUS }, keepEnds = { 0, 1 },
                  grow = { 0, 1 }, count = { 1, 16 }, own = { 0, 1 }, fit = { 0, 1 },
                  outside = { 0, 1 }, develop = { 0, 1 }, form = { 1, #V.FORMS },
-                 together = { 0, 1 } }
+                 together = { 0, 1 }, textSize = { 1, 4 } }
 for _, k in ipairs(V.KINDS) do LIMITS[k.key] = { 0, 1 } end
 for _, f in ipairs(V.FEELS) do LIMITS[f.key] = { 0, 1 } end
 
@@ -141,6 +147,20 @@ local ui = {
 }
 
 local ctx
+
+------------------------------------------------------------------------------
+-- Apple's Human Interface Guidelines (0015, docs/apple-hig-review.md)
+--
+-- Text Size, in the View menu: Apple asks that text can be made at least
+-- twice as big, and 13 points is the Mac's default text size. Every fixed
+-- width in the window goes through px(), so it grows with the text.
+------------------------------------------------------------------------------
+
+local TEXT_SIZES = { 100, 125, 150, 200 }
+local BASE_TEXT = 13
+local fonts = {}           -- one per size, made and attached once in main()
+local S = 1                -- the chosen size as a scale: 1, 1.25, 1.5 or 2
+local function px(n) return math.floor(n * S + 0.5) end
 
 local function say(text, warn) ui.status, ui.warn = text, warn or false end
 
@@ -422,8 +442,37 @@ local function pushTheme()
 end
 local function popTheme() ImGui.PopStyleColor(ctx, #THEME) end
 
+-- The text size and Apple's Mac control: 28 points tall at 100% (a 13-point
+-- line and 7.5 above and below), about 12 points between controls. Pushed
+-- before Begin and popped after End, like the theme.
+local SIZE_VARS = 3
+local function pushSize()
+  ImGui.PushFont(ctx, fonts[st.textSize])
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_FramePadding, px(8), 7.5 * S)
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_ItemSpacing, px(12), px(12))
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_ItemInnerSpacing, px(8), px(6))
+end
+local function popSize()
+  ImGui.PopStyleVar(ctx, SIZE_VARS)
+  ImGui.PopFont(ctx)
+end
+
+local function setTextSize(i)
+  st.textSize = math.max(1, math.min(#TEXT_SIZES, i))
+  S = TEXT_SIZES[st.textSize] / 100
+end
+
+-- A button's width: the width asked for (0 is its label's), grown with the
+-- text size, and never narrower than its label, so nothing is cut short.
+local function fit(label, width)
+  local text = label:gsub("##.*$", "")
+  return math.max(px(width or 0), select(1, ImGui.CalcTextSize(ctx, text)) + px(16))
+end
+
 -- A button that is on takes the accent; every button, on or not, takes the
 -- dark ink, because both fills are far lighter than the window's own text.
+-- One that is on also carries a bar under its label, so being on is not
+-- shown by colour alone.
 local function pick(label, selected, width)
   local pushed = 1
   if selected then
@@ -433,9 +482,35 @@ local function pick(label, selected, width)
     pushed = 4
   end
   ImGui.PushStyleColor(ctx, ImGui.Col_Text, INK)
-  local hit = ImGui.Button(ctx, label, width or 0, 0)
+  local hit = ImGui.Button(ctx, label, fit(label, width), 0)
   ImGui.PopStyleColor(ctx, pushed)
+  if selected then
+    local x1 = ImGui.GetItemRectMin(ctx)
+    local x2, y2 = ImGui.GetItemRectMax(ctx)
+    ImGui.DrawList_AddRectFilled(ImGui.GetWindowDrawList(ctx),
+                                 x1 + px(8), y2 - px(5), x2 - px(8), y2 - px(3), INK)
+  end
   return hit
+end
+
+-- A row of buttons that wraps at the window's edge, each new line starting
+-- under the first (after its row label, if it has one).
+local flowX, flowAvail, flowIndent
+local function flowStart(indent)
+  flowX, flowIndent = nil, indent or 0
+  flowAvail = select(1, ImGui.GetContentRegionAvail(ctx))
+end
+local function flowNext(label, width)
+  local w = fit(label, width)
+  if not flowX then flowX = w; return end
+  if flowX + px(12) + w <= flowAvail then
+    ImGui.SameLine(ctx)
+    flowX = flowX + px(12) + w
+  else
+    ImGui.Dummy(ctx, 1, 1)
+    ImGui.SameLine(ctx, flowIndent)
+    flowX = w
+  end
 end
 
 -- The steps number themselves: drums have no Scale step, and the steps
@@ -446,11 +521,11 @@ local function heading(text)
   ImGui.PushStyleColor(ctx, ImGui.Col_Text, STEP)
   ImGui.Text(ctx, tostring(stepNo))
   ImGui.PopStyleColor(ctx, 1)
-  ImGui.SameLine(ctx, 0, 10)
+  ImGui.SameLine(ctx, 0, px(10))
   ImGui.SeparatorText(ctx, text)
 end
 
-local function stepGap() ImGui.Dummy(ctx, 16, 22) end
+local function stepGap() ImGui.Dummy(ctx, px(16), px(22)) end
 
 local function tip(text)
   if text and ImGui.IsItemHovered(ctx) then ImGui.SetTooltip(ctx, text) end
@@ -465,7 +540,8 @@ end
 local LABEL_W = 110
 local function label(text)
   dim(text)
-  ImGui.SameLine(ctx, LABEL_W)
+  ImGui.SameLine(ctx, px(LABEL_W))
+  flowStart(px(LABEL_W))
 end
 
 -- A switch: on is yellow. Returns true when clicked.
@@ -566,13 +642,11 @@ local function drawSource()
     dim(("“%s”   %s of %d/%d, %s, %s"):format(src.name, plural(math.max(bars, 1), "bar"),
         src.num, src.den, plural(#src.notes, "note"), what))
     if src.stored then
-      ImGui.SameLine(ctx, 0, 12)
+      ImGui.SameLine(ctx, 0, px(12))
       dim("— a variation; new ones start from its original")
     end
   end
 end
-
-local SCALE_ROW = 6   -- scale buttons to a row
 
 local function pickScale(root, scale)
   local h = heardPick()
@@ -594,18 +668,18 @@ local function drawScale()
     for pc = 0, 11 do
       if an.played[pc] then names[#names + 1] = T.noteName(heard, pc) end
     end
-    ImGui.SameLine(ctx, 0, 14)
+    ImGui.SameLine(ctx, 0, px(14))
     dim("Changes use only " .. table.concat(names, " ") .. ".")
     return
   end
-  ImGui.SameLine(ctx, 0, 14)
+  ImGui.SameLine(ctx, 0, px(14))
   dim(("Heard as %s%s."):format(heard.label, #ui.srcs > 1 and (" in “" .. from.name .. "”") or ""))
 
   local cur = ui.pick or heardPick()
   label("Root")
   ImGui.PushID(ctx, "root")
   for i, r in ipairs(T.ROOTS) do
-    if i > 1 then ImGui.SameLine(ctx) end
+    flowNext(r.name, 34)
     ImGui.PushID(ctx, i)
     if pick(r.name, cur.root == i, 34) then pickScale(i, cur.scale) end
     ImGui.PopID(ctx)
@@ -615,10 +689,7 @@ local function drawScale()
   label("Scale")
   ImGui.PushID(ctx, "scale")
   for i, sc in ipairs(V.SCALES) do
-    if i > 1 then
-      if (i - 1) % SCALE_ROW == 0 then ImGui.Dummy(ctx, 1, 1); ImGui.SameLine(ctx, LABEL_W)
-      else ImGui.SameLine(ctx) end
-    end
+    flowNext(sc.name, 150)
     ImGui.PushID(ctx, i)
     if pick(sc.name, cur.scale == i, 150) then pickScale(cur.root, i) end
     ImGui.PopID(ctx)
@@ -668,12 +739,12 @@ local function drawChanges()
   heading("What May Change")
 
   label("How much")
-  ImGui.SetNextItemWidth(ctx, 240)
+  ImGui.SetNextItemWidth(ctx, px(240))
   local changed, v = ImGui.SliderInt(ctx, "##amount", st.amount, 0, 100, "%d%%")
   if changed then st.amount = math.max(0, math.min(100, v)); touched() end
   tip("How far each variation strays from the original. Even at 100% most of\n" ..
       "the original stays exactly as it was.")
-  ImGui.SameLine(ctx, 0, 14)
+  ImGui.SameLine(ctx, 0, px(14))
   local words = AMOUNT_WORDS[1][2]
   for _, w in ipairs(AMOUNT_WORDS) do if st.amount >= w[1] then words = w[2] end end
   local want = V.budget(st.amount / 100, #ui.srcs[1].notes)
@@ -704,23 +775,21 @@ local function drawChanges()
   }
 
   label("Changes")
-  local first = true
   for _, k in ipairs(V.KINDS) do
     -- Voicing needs chords struck together; quality takes arpeggios too.
     local shown = not ((k.key == "chords" and not hasChords())
                     or (k.key == "quality" and not hasChords() and not hasArpeggios())
                     or (k.key == "notes" and allDrums()))
     if shown then
-      if not first then ImGui.SameLine(ctx) end
+      flowNext(k.name)
       switch(k.key, k.name, hints[k.key])
-      first = false
     end
   end
 
   -- Only while Chord quality is on and there are chords for it to change.
   if st.quality == 1 and (hasChords() or hasArpeggios()) then
     ImGui.Dummy(ctx, 1, 1)
-    ImGui.SameLine(ctx, LABEL_W)
+    ImGui.SameLine(ctx, px(LABEL_W))
     local c, v = ImGui.Checkbox(ctx, "Chord Changes May Leave the Scale", st.outside == 1)
     if c then st.outside = v and 1 or 0; touched() end
     tip("Off: a chord only changes into one whose notes are in the scale —\n" ..
@@ -732,7 +801,7 @@ local function drawChanges()
   -- Only near the top of the slider, where it can happen, and not for drums.
   if canDevelop() then
     ImGui.Dummy(ctx, 1, 1)
-    ImGui.SameLine(ctx, LABEL_W)
+    ImGui.SameLine(ctx, px(LABEL_W))
     switch("develop", "Develop the Motif",
            "Near 100%, now and then a variation takes a stretch of the music — a\n" ..
            "bar or two, or at 100% most of it — and develops it the way a composer\n" ..
@@ -743,14 +812,14 @@ local function drawChanges()
   end
 
   label("Feel")
-  for i, f in ipairs(V.FEELS) do
-    if i > 1 then ImGui.SameLine(ctx) end
+  for _, f in ipairs(V.FEELS) do
+    flowNext(f.name, 90)
     switch(f.key, f.name, hints[f.key], 90)
   end
 
   label("Where")
   for i, name in ipairs(V.FOCUS) do
-    if i > 1 then ImGui.SameLine(ctx) end
+    flowNext(name)
     ImGui.PushID(ctx, "focus" .. i)
     if pick(name, st.focus == i, 0) then st.focus = i; touched() end
     ImGui.PopID(ctx)
@@ -770,10 +839,10 @@ local function drawVariations()
   heading("Variations")
 
   label("How many")
-  ImGui.SetNextItemWidth(ctx, 240)
+  ImGui.SetNextItemWidth(ctx, px(240))
   local changed, v = ImGui.SliderInt(ctx, "##count", st.count, 1, 16, "%d")
   if changed then st.count = math.max(1, math.min(16, v)); touched() end
-  ImGui.SameLine(ctx, 0, 14)
+  ImGui.SameLine(ctx, 0, px(14))
   local c2, grow = ImGui.Checkbox(ctx, "Grow Across the Series", st.grow == 1)
   if c2 then st.grow = grow and 1 or 0; touched() end
   tip("The first variations change less and the last the full amount, so a\n" ..
@@ -784,13 +853,13 @@ local function drawVariations()
   if st.count > 1 then
     label("Form")
     for i, f in ipairs(V.FORMS) do
-      if i > 1 then ImGui.SameLine(ctx) end
+      flowNext(f.name)
       ImGui.PushID(ctx, "form" .. i)
       if pick(f.name, st.form == i, 0) then st.form = i; touched() end
       ImGui.PopID(ctx)
       tip(f.hint .. "\nAfter the original: " .. V.formLetters(i, st.count))
     end
-    ImGui.SameLine(ctx, 0, 14)
+    ImGui.SameLine(ctx, 0, px(14))
     dim("A  " .. V.formLetters(st.form, st.count))
   end
   -- Anything changed above, this frame or in step 2, is previewed now.
@@ -813,7 +882,7 @@ local function drawVariations()
     like = like + shown[j].like * #ui.srcs[j].notes
     total = total + #ui.srcs[j].notes
   end
-  ImGui.SameLine(ctx, 0, 16)
+  ImGui.SameLine(ctx, 0, px(16))
   local now = shown[1]
   if now.home then
     dim("The original again, played afresh")
@@ -822,7 +891,7 @@ local function drawVariations()
   else
     dim(("Keeps %d%% of the original’s notes as they were"):format(math.floor(100 * like / math.max(total, 1) + 0.5)))
   end
-  ImGui.SameLine(ctx, 0, 16)
+  ImGui.SameLine(ctx, 0, px(16))
   if pick("New Set", false, 90) then newSeed(); touched() end
   tip("Another set of variations with the same settings.")
   ImGui.SameLine(ctx)
@@ -850,7 +919,7 @@ local function drawVariations()
   local w = select(1, ImGui.GetContentRegionAvail(ctx))
   local orig, beats = together(function(j) return ui.srcs[j].notes end)
   local var = together(function(j) return shown[j].notes end)
-  pianoRoll({ { orig, SOURCE_NOTE }, { var, SELECTED } }, beats, ui.srcs[1].barBeats, math.max(160, w), 110,
+  pianoRoll({ { orig, SOURCE_NOTE }, { var, SELECTED } }, beats, ui.srcs[1].barBeats, math.max(px(160), w), px(110),
             ui.playhead)
 
   -- The changes, each with a box: untick one to leave it out of this
@@ -887,7 +956,7 @@ local function drawVariations()
         "change, and the feel, stays exactly as it is.")
   end
 
-  ImGui.Dummy(ctx, 0, 4)
+  ImGui.Dummy(ctx, 0, px(4))
   if pick(("Make %d %s"):format(st.count, st.count == 1 and "Variation" or "Variations"), false, 180) then
     makeThem()
   end
@@ -921,11 +990,61 @@ local function drawVariations()
   end
 end
 
+-- The View menu: Text Size, with the Mac's own zoom keys.
+local SHORTCUT_KEY = (reaper.GetOS():find("OSX") or reaper.GetOS():find("mac")) and "Cmd" or "Ctrl"
+local function menuBar()
+  if not ImGui.BeginMenuBar(ctx) then return end
+  if ImGui.BeginMenu(ctx, "View") then
+    for i, size in ipairs(TEXT_SIZES) do
+      local keys = (i == 1 and SHORTCUT_KEY .. "+0") or nil
+      if ImGui.MenuItem(ctx, ("Text Size %d%%"):format(size), keys, st.textSize == i) then
+        setTextSize(i)
+      end
+    end
+    ImGui.Separator(ctx)
+    if ImGui.MenuItem(ctx, "Bigger Text", SHORTCUT_KEY .. "+=", false, st.textSize < #TEXT_SIZES) then
+      setTextSize(st.textSize + 1)
+    end
+    if ImGui.MenuItem(ctx, "Smaller Text", SHORTCUT_KEY .. "+-", false, st.textSize > 1) then
+      setTextSize(st.textSize - 1)
+    end
+    ImGui.EndMenu(ctx)
+  end
+  ImGui.EndMenuBar(ctx)
+end
+
+-- Cmd (Ctrl on Windows) with =, - or 0, as in every Mac app that zooms.
+local function zoomKeys()
+  if ImGui.GetKeyMods(ctx) & ImGui.Mod_Shortcut == 0 then return end
+  if ImGui.IsKeyPressed(ctx, ImGui.Key_Equal) or ImGui.IsKeyPressed(ctx, ImGui.Key_KeypadAdd) then
+    setTextSize(st.textSize + 1)
+  elseif ImGui.IsKeyPressed(ctx, ImGui.Key_Minus) or ImGui.IsKeyPressed(ctx, ImGui.Key_KeypadSubtract) then
+    setTextSize(st.textSize - 1)
+  elseif ImGui.IsKeyPressed(ctx, ImGui.Key_0) then
+    setTextSize(1)
+  end
+end
+
+-- What just happened, at the top of the window where it cannot fall off
+-- the bottom of the screen, and there until it is dismissed or replaced:
+-- Apple asks for nothing that goes away on a timer.
+local function drawMessage()
+  if ui.status == "" then return end
+  ImGui.PushStyleColor(ctx, ImGui.Col_Text, ui.warn and WARN or DIM)
+  ImGui.Text(ctx, ui.status)
+  ImGui.PopStyleColor(ctx, 1)
+  ImGui.SameLine(ctx, 0, px(16))
+  if pick("Dismiss", false) then say("") end
+end
+
 local function frame()
   stepNo = 0
   ui.playhead = Place.auditionTick()   -- and stops it at the end
   if ui.dirty then rebuild() end
 
+  menuBar()
+  zoomKeys()
+  drawMessage()
   drawSource()
   if ui.dirty then rebuild() end   -- a source just read
   if ui.srcs then
@@ -939,12 +1058,6 @@ local function frame()
     stepGap()
     drawVariations()
   end
-
-  if ui.status ~= "" then
-    ImGui.PushStyleColor(ctx, ImGui.Col_Text, ui.warn and WARN or DIM)
-    ImGui.Text(ctx, ui.status)
-    ImGui.PopStyleColor(ctx, 1)
-  end
 end
 
 ------------------------------------------------------------------------------
@@ -957,11 +1070,13 @@ local function loop()
   ImGui.SetNextWindowSize(ctx, 760, 720, ImGui.Cond_FirstUseEver)
   ImGui.SetNextWindowBgAlpha(ctx, 1.0)
   pushTheme()
-  local visible, open = ImGui.Begin(ctx, TITLE, true)
+  pushSize()
+  local visible, open = ImGui.Begin(ctx, TITLE, true, ImGui.WindowFlags_MenuBar)
   if visible then
     frame()
     ImGui.End(ctx)
   end
+  popSize()
   popTheme()   -- outside the visible test: a push always needs its pop
   if open and not ImGui.IsKeyPressed(ctx, ImGui.Key_Escape) then
     reaper.defer(loop)
@@ -986,7 +1101,14 @@ local function main()
   reaper.RefreshToolbar2(sectionID, cmdID)
   reaper.atexit(shutdown)
   if reaper.set_action_options then reaper.set_action_options(1) end
-  ctx = ImGui.CreateContext(TITLE)
+  -- The keyboard alone: Tab and the arrow keys move between controls, Space
+  -- or Return presses one, and a ring shows where you are.
+  ctx = ImGui.CreateContext(TITLE, ImGui.ConfigFlags_NavEnableKeyboard)
+  for i, size in ipairs(TEXT_SIZES) do
+    fonts[i] = ImGui.CreateFont("sans-serif", math.floor(BASE_TEXT * size / 100 + 0.5))
+    ImGui.Attach(ctx, fonts[i])
+  end
+  setTextSize(st.textSize)
   Place.sweep()   -- anything an audition left behind when REAPER or the script died
   load(true)
   reaper.defer(loop)

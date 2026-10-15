@@ -119,6 +119,7 @@ function ImGui.DrawList_AddLine(_, x1, y1, x2, y2, col)
     if type(v) ~= "number" then error("line argument is a " .. type(v)) end
   end
 end
+local HIG = dofile(HERE .. "/hig_mock.lua")(ImGui)
 setmetatable(ImGui, { __index = function(_, k)
   error("the script called ImGui." .. tostring(k) .. ", which the mock does not have")
 end })
@@ -371,6 +372,34 @@ do
   eq(g.ink[buttonIndex("Towards the Start")].bg, 0xFFF200FF, "a focus past the end is clamped to the last")
   eq(g.ink[buttonIndex("Rhythm")].bg, 0xFFF200FF, "a switch saved as 7 is simply on")
 end
+
+------------------------------------------------------------------------------
+-- Apple's Human Interface Guidelines (decision 0015)
+------------------------------------------------------------------------------
+
+HIG.check({
+  ok = ok, eq = eq, frame = function() frame() end,
+  loaded = function()
+    P.ext = {}
+    project("noir", "Noir")
+    start()
+    frame()
+    frame()
+  end,
+  warned = function()
+    P.ext = {}
+    P.reset()
+    start()
+    click("Use Selected Items")
+    return "Select a MIDI item first."
+  end,
+  dismiss = function() click("Dismiss") end,
+  quit = function() atexitFn() end,
+  restart = function() start(); frame() end,
+  saved = function() return P.ext["MidiVariator:state"] end,
+  setSaved = function(v) P.ext["MidiVariator:state"] = v end,
+  sizeKey = "textSize",
+})
 
 ------------------------------------------------------------------------------
 -- Other material

@@ -199,6 +199,21 @@ Place* does the same for the groups you select.
 
 Switch it off and each item is varied on its own, as before.
 
+## Bigger text, and the keyboard
+
+The window follows Apple's design guidelines for Mac apps
+([what that covers](docs/apple-hig-review.md)).
+
+- **View → Text Size** makes everything bigger, up to twice the size: 100%,
+  125%, 150% or 200%. **Cmd+=** and **Cmd+-** (Ctrl on Windows) do the same,
+  and **Cmd+0** goes back to 100%. It remembers your choice.
+- **The keyboard alone works.** Press **Tab** or an arrow key and a white
+  ring appears round a control; Tab and the arrows move it, and **Space** or
+  **Return** clicks. **Esc** closes the window.
+- **Messages appear at the top** and stay until you click **Dismiss**.
+- A chosen button is yellow **and** has a dark bar under its name, so it
+  doesn't depend on seeing colour.
+
 ## If something goes wrong
 
 **It says it needs ReaImGui.** The extension is not installed, or REAPER has

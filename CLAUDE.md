@@ -317,6 +317,21 @@ ScaleView's scale names stay as they are; preferences are saved by key and
 index, so a label can change freely - but the item names' " - variation N"
 is read back by `Place` and stays.
 
+**The rest of Apple's HIG Foundations**
+([0015](docs/decisions/0015-apples-hig-foundations.md),
+[`docs/apple-hig-review.md`](docs/apple-hig-review.md), after Midi Suggester's
+0009 and Transient Shuffler): every line of text is **7:1** on the ground
+(secondary `#B0B6C0`, warnings `#FF9E96` - the house red and `#8A919C` are
+not for words); **View → Text Size** 100-200% (Cmd+= / Cmd+- / Cmd+0),
+saved as `textSize`, the system sans-serif at 13 points; controls **28
+points tall, 12 apart** (`pushSize`, before `Begin`, popped after `End` like
+the theme); **keyboard navigation** on, its ring `#F2F4F7`; a chosen button
+also carries an **ink bar** (not colour alone); the **message at the top**
+until *Dismiss*. Rules for new code: every fixed size goes through `px()`,
+every button through `pick()` (never narrower than its label), every text
+colour 7:1. `tests/hig_mock.lua` - the same file in every ReaImGui repo of
+the family - adds the calls to the mock and checks each of these per widget.
+
 The list of changes has a **box per change** (label
 `text##change<j>.<id>`); unticking writes `ui.skips[j][place]` - the place
 an echo echoes - and sets `ui.dirty` directly, because `touched()` clears
@@ -349,6 +364,7 @@ load; the test loads nonsense to prove it.
 | 1.2 | Chord quality: chords changed to a neighbouring quality, read by ScaleView Pro's reader, in the scale unless allowed out. "Chords" split into *Chord voicing* and *Chord quality*. Not yet run in REAPER. |
 | 1.3 | Develop the motif near 100%; arpeggiated chords change quality; untick a change; forms (A A' A A''); vary a melody and its chords together; audition. On `claude/inspiring-hawking-mpmyqg`. **Not yet run in REAPER** - audition especially (muting, the transport, fixed lanes) has only met the mock. |
 | 1.3.1 | The window's words follow Apple's writing guidelines ([0014](docs/decisions/0014-window-text-follows-apples-writing-guidelines.md)): title-style buttons and switches, messages that say what to do, em dashes and curly quotes. On `claude/adoring-feynman-bihxp2`. |
+| 1.4 | The rest of Apple's HIG Foundations ([0015](docs/decisions/0015-apples-hig-foundations.md)): 7:1 text, Text Size up to 200%, 28-point controls, the keyboard alone, the chosen bar, the message at the top. On `ccr-f2d9adc9-lanc9o`, built on the 1.3.1 branch. **Not yet run in REAPER.** |
 
 **Known limits, all deliberate for now:**
 
