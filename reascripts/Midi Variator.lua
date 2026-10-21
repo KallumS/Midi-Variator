@@ -1,8 +1,8 @@
 --[[
  * ReaScript Name: Midi Variator
- * Description:    Makes small variations of a MIDI item - a note bent, a
+ * Description:    Makes small variations of a MIDI item — a note bent, a
  *                 beat anticipated, a passing note, a chord revoiced, a
- *                 touch of feel - each one made from the original, so the
+ *                 touch of feel — each one made from the original, so the
  *                 twentieth still sounds like the first.
  *
  * About:          Import a .mid file (or play something in), select the item,
@@ -10,15 +10,15 @@
  *                 and audition the variations against the original, untick
  *                 any change you don't like, then make them after it on the
  *                 same track. Near 100% a stretch of the motif may be
- *                 developed - inverted, reversed, sequenced. A melody and its
+ *                 developed — inverted, reversed, sequenced. A melody and its
  *                 chords on two tracks are varied together. Every variation
- *                 keeps the original inside it, so it can be varied again -
- *                 from the original - or put back.
+ *                 keeps the original inside it, so it can be varied again —
+ *                 from the original — or put back.
  *
  *                 Needs ReaImGui, from the ReaTeam Extensions repository.
  * Author:         Kallum Shah
  * Links:          https://github.com/KallumS/Midi-Variator
- * Version:        1.3
+ * Version:        1.3.1
  * Provides:
  *   mv_theory.lua
  *   mv_vary.lua
@@ -36,8 +36,9 @@ local imgui_path = reaper.ImGui_GetBuiltinPath and
                    (reaper.ImGui_GetBuiltinPath() .. "/imgui.lua")
 if not imgui_path then
   reaper.MB("Midi Variator needs the ReaImGui extension.\n\n" ..
-            "Install it with ReaPack, from the ReaTeam Extensions repository.",
-            "Missing dependency", 0)
+            "Install it with ReaPack, from the ReaTeam Extensions repository, " ..
+            "then run Midi Variator again.",
+            "ReaImGui Needed", 0)
   return
 end
 local ImGui = dofile(imgui_path)("0.9")
@@ -209,7 +210,8 @@ local function load(quiet)
   if not srcs then
     ui.srcs, ui.ans, ui.runs = nil, nil, nil
     if not quiet then
-      say(why == Place.NO_ITEM and "Select a MIDI item first." or "That item has no notes in it.", true)
+      say(why == Place.NO_ITEM and "Select a MIDI item first."
+          or "That item has no notes. Select a MIDI item with notes in it.", true)
     end
     return
   end
@@ -345,7 +347,7 @@ local function makeThem()
   Place.auditionStop()
   if not sourcesAlive() then
     load(true)
-    say("The item has gone - select it and press Use selected items.", true)
+    say("The item is no longer in the project. Select it and click Use Selected Items.", true)
     return
   end
   local jobs = {}
@@ -372,10 +374,10 @@ local function makeThem()
   end
   local result, made = Place.make(jobs)
   if result ~= Place.OK then
-    say("REAPER would not make the items.", true)
+    say("REAPER couldn’t make the items. Try again.", true)
     return
   end
-  say(("Made %s after \"%s\". They are selected: Vary selected in place re-rolls them."):format(
+  say(("Made %s after “%s”. They’re selected — click Vary Selected in Place to vary them again."):format(
       plural(made, "variation"), ui.srcs[1].name))
   newSeed()
   ui.show, ui.dirty = 1, true
@@ -406,7 +408,7 @@ end
 local function restoreSelected()
   Place.auditionStop()
   local result, count = Place.restore(Place.selectedItems())
-  if result ~= Place.OK then say("None of the selected items is a variation.", true); return end
+  if result ~= Place.OK then say("None of the selected items is a variation. Select a variation and try again.", true); return end
   if not sourcesAlive() then load(true) end
   say(("Put the original back in %s."):format(plural(count, "item")))
 end
@@ -538,19 +540,19 @@ end
 
 local function drawSource()
   heading("Source")
-  if pick("Use selected items", false, 170) then load() end
-  tip("Select one or more MIDI items in the arrange view - an imported .mid file\n" ..
-      "is one - then press this. Each is varied on its own track.")
+  if pick("Use Selected Items", false, 170) then load() end
+  tip("Select one or more MIDI items in the arrange view — an imported .mid file\n" ..
+      "is one — then click this. Each is varied on its own track.")
   if not ui.srcs then
-    dim("Import a .mid file onto a track, select the item it makes, and press the button.")
+    dim("Import a .mid file onto a track, select the item it makes, and click Use Selected Items.")
     return
   end
   -- Only when some of them sound at the same time.
   if canGroup() then
     ImGui.SameLine(ctx)
-    switch("together", "Vary them together",
-           "The items that sound at the same time - a melody on one track and its\n" ..
-           "chords on another - are varied as one piece: a changed melody note\n" ..
+    switch("together", "Vary Them Together",
+           "The items that sound at the same time — a melody on one track and its\n" ..
+           "chords on another — are varied as one piece: a changed melody note\n" ..
            "never grinds against the chords, a changed chord never against the\n" ..
            "tune, the key is heard from all of them, and each variation of one\n" ..
            "lines up with the same variation of the others.\n" ..
@@ -561,11 +563,11 @@ local function drawSource()
     local an = ui.ans[j]
     local bars = math.floor((src.beats - src.lead) / src.barBeats + 0.5)
     local what = an.drums and "drums" or (an.key and an.key.label or "")
-    dim(("\"%s\"   %s of %d/%d, %s, %s"):format(src.name, plural(math.max(bars, 1), "bar"),
+    dim(("“%s”   %s of %d/%d, %s, %s"):format(src.name, plural(math.max(bars, 1), "bar"),
         src.num, src.den, plural(#src.notes, "note"), what))
     if src.stored then
       ImGui.SameLine(ctx, 0, 12)
-      dim("- a variation; new ones start from its original")
+      dim("— a variation; new ones start from its original")
     end
   end
 end
@@ -584,9 +586,9 @@ local function drawScale()
   local an, from = heardFirst()
   local heard = an.heardKey
 
-  switch("own", "Stay in the original's notes",
+  switch("own", "Stay in the Original’s Notes",
          "Changed and added notes use only the notes the original already\n" ..
-         "plays - nothing new at all. The scale below is set aside.", 0)
+         "plays — nothing new at all. The scale below is set aside.", 0)
   if st.own == 1 then
     local names = {}
     for pc = 0, 11 do
@@ -597,7 +599,7 @@ local function drawScale()
     return
   end
   ImGui.SameLine(ctx, 0, 14)
-  dim(("Heard as %s%s."):format(heard.label, #ui.srcs > 1 and (" in \"" .. from.name .. "\"") or ""))
+  dim(("Heard as %s%s."):format(heard.label, #ui.srcs > 1 and (" in “" .. from.name .. "”") or ""))
 
   local cur = ui.pick or heardPick()
   label("Root")
@@ -624,11 +626,11 @@ local function drawScale()
   ImGui.PopID(ctx)
 
   if not ui.pick then
-    dim("Pick another scale to take the variations there.")
+    dim("Choose another scale to take the variations there.")
     return
   end
-  if pick("Back to what it heard", false, 200) then ui.pick = nil; touched(); return end
-  tip("Forget the picked scale and use the one heard in the music.")
+  if pick("Back to What It Heard", false, 200) then ui.pick = nil; touched(); return end
+  tip("Forgets the chosen scale and uses the one heard in the music.")
 
   local sc = V.pickedScale(T, ui.pick.root, ui.pick.scale)
   local outside = 0
@@ -641,10 +643,10 @@ local function drawScale()
     dim(("Every note of the original is in %s already; the changes use its notes."):format(sc.label))
     return
   end
-  local changed, v = ImGui.Checkbox(ctx, "Bring the original into this scale", st.fit == 1)
+  local changed, v = ImGui.Checkbox(ctx, "Bring the Original into This Scale", st.fit == 1)
   if changed then st.fit = v and 1 or 0; touched() end
-  tip("On: the original's notes outside the scale move to its nearest note\n" ..
-      "first - C major into C minor makes every E an Eb - so the variations\n" ..
+  tip("On: the original’s notes outside the scale move to its nearest note\n" ..
+      "first — C major into C minor makes every E an Eb — so the variations\n" ..
       "pivot to the new scale. Off: the original stays as it is, and only\n" ..
       "the changes use the new scale.")
   local fitted = {}
@@ -659,11 +661,11 @@ end
 
 local MAX_LINES = 10   -- changes listed for one variation
 
-local AMOUNT_WORDS = { { 0, "none - exact copies" }, { 1, "a whisper" }, { 21, "subtle" },
+local AMOUNT_WORDS = { { 0, "none — exact copies" }, { 1, "a whisper" }, { 21, "subtle" },
                        { 46, "noticeable" }, { 71, "bold, still recognisable" } }
 
 local function drawChanges()
-  heading("What may change")
+  heading("What May Change")
 
   label("How much")
   ImGui.SetNextItemWidth(ctx, 240)
@@ -677,7 +679,7 @@ local function drawChanges()
   local want = V.budget(st.amount / 100, #ui.srcs[1].notes)
   if st.amount > 0 then
     local about = math.max(1, math.floor(want + 0.5))
-    words = ("%s - about %s in %d notes"):format(words, plural(about, "change"), #ui.srcs[1].notes)
+    words = ("%s — about %s in %d notes"):format(words, plural(about, "change"), #ui.srcs[1].notes)
   end
   if canDevelop() and st.develop == 1 then words = words .. ", and now and then a stretch developed" end
   dim(words)
@@ -687,7 +689,7 @@ local function drawChanges()
     rhythm = "A long note struck twice, two notes tied into one, or a beat\n" ..
              "anticipated (pushed early) or held back.",
     add = "A passing note, a grace note, a pickup into a note, a chord filled\n" ..
-          "out, or - for drums - a ghost note.",
+          "out, or — for drums — a ghost note.",
     remove = "A weak note left out (sometimes the note before is held over it),\n" ..
              "or a chord thinned.",
     chords = "A chord revoiced (an inner note moved an octave) or rolled like a strum.",
@@ -719,11 +721,11 @@ local function drawChanges()
   if st.quality == 1 and (hasChords() or hasArpeggios()) then
     ImGui.Dummy(ctx, 1, 1)
     ImGui.SameLine(ctx, LABEL_W)
-    local c, v = ImGui.Checkbox(ctx, "Chord changes may leave the scale", st.outside == 1)
+    local c, v = ImGui.Checkbox(ctx, "Chord Changes May Leave the Scale", st.outside == 1)
     if c then st.outside = v and 1 or 0; touched() end
-    tip("Off: a chord only changes into one whose notes are in the scale -\n" ..
+    tip("Off: a chord only changes into one whose notes are in the scale —\n" ..
         "in C major, G7 can become G9 or G13, C can become Cmaj7 or C6.\n" ..
-        "On: it may borrow notes from outside - C can become Cmin or Caug,\n" ..
+        "On: it may borrow notes from outside — C can become Cmin or Caug,\n" ..
         "G7 can become G7b9, Amin can become Adim.")
   end
 
@@ -731,9 +733,9 @@ local function drawChanges()
   if canDevelop() then
     ImGui.Dummy(ctx, 1, 1)
     ImGui.SameLine(ctx, LABEL_W)
-    switch("develop", "Develop the motif",
-           "Near 100%, now and then a variation takes a stretch of the music - a\n" ..
-           "bar or two, or at 100% most of it - and develops it the way a composer\n" ..
+    switch("develop", "Develop the Motif",
+           "Near 100%, now and then a variation takes a stretch of the music — a\n" ..
+           "bar or two, or at 100% most of it — and develops it the way a composer\n" ..
            "brings a motif back: turned upside down, played in reverse order, moved\n" ..
            "up or down the scale (a sequence), its intervals widened or narrowed, or\n" ..
            "its first half repeated a step lower. The rhythm stays, so it is still\n" ..
@@ -753,12 +755,12 @@ local function drawChanges()
     if pick(name, st.focus == i, 0) then st.focus = i; touched() end
     ImGui.PopID(ctx)
     tip(({ "Changes may land anywhere in the phrase.",
-           "Changes gather towards the end - the phrase starts the same and\n" ..
+           "Changes gather towards the end — the phrase starts the same and\n" ..
            "answers differently, the classic way to vary a repeated motif.",
            "Changes gather towards the start." })[i])
   end
 
-  local c1, keep = ImGui.Checkbox(ctx, "Keep the first and last notes", st.keepEnds == 1)
+  local c1, keep = ImGui.Checkbox(ctx, "Keep the First and Last Notes", st.keepEnds == 1)
   if c1 then st.keepEnds = keep and 1 or 0; touched() end
   tip("The notes that open and close the phrase stay exactly as they are,\n" ..
       "so every variation is recognisably the same motif.")
@@ -772,7 +774,7 @@ local function drawVariations()
   local changed, v = ImGui.SliderInt(ctx, "##count", st.count, 1, 16, "%d")
   if changed then st.count = math.max(1, math.min(16, v)); touched() end
   ImGui.SameLine(ctx, 0, 14)
-  local c2, grow = ImGui.Checkbox(ctx, "Grow across the series", st.grow == 1)
+  local c2, grow = ImGui.Checkbox(ctx, "Grow Across the Series", st.grow == 1)
   if c2 then st.grow = grow and 1 or 0; touched() end
   tip("The first variations change less and the last the full amount, so a\n" ..
       "repeated motif builds. Each is still made from the original.")
@@ -814,14 +816,14 @@ local function drawVariations()
   ImGui.SameLine(ctx, 0, 16)
   local now = shown[1]
   if now.home then
-    dim("the original again, played afresh")
+    dim("The original again, played afresh")
   elseif now.echo then
-    dim(("an echo of variation %d: the same changes, played afresh"):format(now.echo))
+    dim(("An echo of variation %d — the same changes, played afresh"):format(now.echo))
   else
-    dim(("keeps %d%% of the original's notes as they were"):format(math.floor(100 * like / math.max(total, 1) + 0.5)))
+    dim(("Keeps %d%% of the original’s notes as they were"):format(math.floor(100 * like / math.max(total, 1) + 0.5)))
   end
   ImGui.SameLine(ctx, 0, 16)
-  if pick("New set", false, 90) then newSeed(); touched() end
+  if pick("New Set", false, 90) then newSeed(); touched() end
   tip("Another set of variations with the same settings.")
   ImGui.SameLine(ctx)
   local playing = Place.auditioning()
@@ -830,12 +832,12 @@ local function drawVariations()
     else
       if ui.dirty then rebuild() end
       if Place.auditionStart(ui.srcs, shownLists()) ~= Place.OK then
-        say("The item has gone - select it and press Use selected items.", true)
+        say("The item is no longer in the project. Select it and click Use Selected Items.", true)
       end
       ui.heard = { runs = ui.runs, show = ui.show }
     end
   end
-  tip("Plays this variation in the original's place, with the rest of the\n" ..
+  tip("Plays this variation in the original’s place, with the rest of the\n" ..
       "project, from the bar it starts in; the original is silent meanwhile.\n" ..
       "Step through the batch with < and > while it plays to hear the others.\n" ..
       "Nothing is added to the project or the undo history.")
@@ -857,7 +859,7 @@ local function drawVariations()
   for _, grp in ipairs(ui.groups) do
     local j = grp[1]
     local names = {}
-    for i, m in ipairs(grp) do names[i] = "\"" .. ui.srcs[m].name .. "\"" end
+    for i, m in ipairs(grp) do names[i] = "“" .. ui.srcs[m].name .. "”" end
     for _, c in ipairs(shown[j].moves) do
       lines[#lines + 1] = { j = j, c = c,
         text = (#ui.srcs > 1 and (table.concat(names, " + ") .. "  ") or "") .. c.text }
@@ -886,23 +888,25 @@ local function drawVariations()
   end
 
   ImGui.Dummy(ctx, 0, 4)
-  if pick(("Make %s"):format(plural(st.count, "variation")), false, 180) then makeThem() end
+  if pick(("Make %d %s"):format(st.count, st.count == 1 and "Variation" or "Variations"), false, 180) then
+    makeThem()
+  end
   tip("Puts these variations after the original on its track, one after\n" ..
       "another, each starting on the same beat of its bar. Nothing already\n" ..
-      "on the track is covered. One undo step.")
+      "on the track is covered. It’s one undo step.")
 
   local selected = Place.selectedItems()
   if #selected > 0 then
     ImGui.SameLine(ctx)
-    if pick("Vary selected in place", false, 190) then
+    if pick("Vary Selected in Place", false, 190) then
       varySelected()
       -- Varying can replace items (pooled copies, .mid files, loops), and
       -- REAPER refuses a deleted one: read the selection again.
       selected = Place.selectedItems()
     end
     tip("Gives every selected MIDI item a new variation of its own original,\n" ..
-        "where it is. Select a row of copies of a phrase and press this to\n" ..
-        "vary them all. One undo step.")
+        "where it is. Select a row of copies of a phrase and click this to\n" ..
+        "vary them all. It’s one undo step.")
     local anyVariation = false
     for _, item in ipairs(selected) do
       local _, text = reaper.GetSetMediaItemInfo_String(item, Place.EXT, "", false)
@@ -910,7 +914,7 @@ local function drawVariations()
     end
     if anyVariation then
       ImGui.SameLine(ctx)
-      if pick("Put back the original", false, 180) then restoreSelected() end   -- the last use of `selected`
+      if pick("Put Back the Original", false, 180) then restoreSelected() end   -- the last use of `selected`
       tip("Every selected variation plays its original again. It stays a\n" ..
           "variation, so it can be varied again later.")
     end

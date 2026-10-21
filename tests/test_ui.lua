@@ -252,7 +252,7 @@ frame()
 eq(#g.buttons, 1, "with nothing read there is one button")
 ok(has(g.texts, "Import a .mid file"), "and it says what to do")
 eq(#g.headings, 1, "only the first step is shown: no dead controls")
-click("Use selected items")
+click("Use Selected Items")
 ok(has(g.texts, "Select a MIDI item first."), "pressing it with nothing selected says so")
 
 ------------------------------------------------------------------------------
@@ -265,14 +265,14 @@ start()                       -- reads the selection it starts with
 frame()
 eq(#g.headings, 4, "a selected item on start: all four steps")
 eq(g.headings[2], "Scale", "the second is the scale")
-ok(has(g.texts, "\"Noir\"   8 bars of 4/4, 28 notes, D Minor (Natural)"), "the source described")
+ok(has(g.texts, "“Noir”   8 bars of 4/4, 28 notes, D Minor (Natural)"), "the source described")
 ok(has(g.texts, "Variation 1 of 4"), "four variations previewed")
-ok(has(g.texts, "subtle - about 2 changes in 28 notes"), "the amount said in words and changes")
-ok(not has(g.buttons, "Chord voicing") and not has(g.buttons, "Chord quality"),
+ok(has(g.texts, "subtle — about 2 changes in 28 notes"), "the amount said in words and changes")
+ok(not has(g.buttons, "Chord Voicing") and not has(g.buttons, "Chord Quality"),
    "no chord switches for a melody: no dead controls")
-ok(not has(g.checkboxes, "Chord changes may leave the scale"), "nor the box to leave the scale")
+ok(not has(g.checkboxes, "Chord Changes May Leave the Scale"), "nor the box to leave the scale")
 ok(has(g.buttons, "Notes") and has(g.buttons, "Rhythm"), "the other switches are there")
-ok(not has(g.buttons, "Put back the original"), "nothing to put back in an original")
+ok(not has(g.buttons, "Put Back the Original"), "nothing to put back in an original")
 checkInk("melody")
 do
   local grey, yellow = false, false
@@ -297,39 +297,39 @@ do
   local src = { notes = F.noir, lead = 0, beats = 32, barBeats = 4, pulse = 1 }
   local expected = V.series(src, V.analyse(src, T), (function()
     local o = V.defaults(); o.amount = 0.35; return o end)(), seed, 4, T, 1, {})
-  click("Make 4 variations")
+  click("Make 4 Variations")
   eq(#tr.items, 5, "four new items")
-  ok(has(g.texts, "Made 4 variations after \"Noir\""), "and it says so")
+  ok(has(g.texts, "Made 4 variations after “Noir”"), "and it says so")
   for i = 1, 4 do
     eq(notesOfItem(tr.items[i + 1]), notesOfList(expected[i].notes),
        ("variation %d is exactly the one previewed"):format(i))
     eq(tr.items[i + 1].take.name, "Noir - variation " .. i, "numbered")
   end
   eq(#P.selected, 4, "the new ones are selected")
-  ok(has(g.buttons, "Put back the original"), "and can be put back")
-  eq(P.undoNames[#P.undoNames], "Midi Variator: make variations", "one undo step")
+  ok(has(g.buttons, "Put Back the Original"), "and can be put back")
+  eq(P.undoNames[#P.undoNames], "Midi Variator: Make Variations", "one undo step")
 end
 
 -- Making more numbers on from the last.
-click("Make 4 variations")
+click("Make 4 Variations")
 eq(#tr.items, 9, "four more")
 eq(tr.items[9].take.name, "Noir - variation 8", "numbered on from the ones before")
 
 -- Vary the selected ones in place, then put their original back.
 do
   local before = notesOfItem(tr.items[6])
-  click("Vary selected in place")
+  click("Vary Selected in Place")
   ok(has(g.texts, "Varied 4 items in place"), "varied in place")
   eq(#tr.items, 9, "no new items")
   ok(notesOfItem(tr.items[6]) ~= before, "the notes changed")
-  click("Put back the original")
+  click("Put Back the Original")
   ok(has(g.texts, "Put the original back in 4 items."), "put back")
   eq(notesOfItem(tr.items[6]), notesOfItem(tr.items[1]), "each plays the original again")
 end
 
 -- Amount 0: exact copies but for the feel; no changes listed.
 slide("##amount", 0)
-ok(has(g.texts, "none - exact copies"), "amount 0 says so")
+ok(has(g.texts, "none — exact copies"), "amount 0 says so")
 ok(has(g.texts, "No changes to the notes."), "and lists nothing")
 slide("##amount", 100)
 ok(has(g.texts, "bold, still recognisable"), "amount 100 is bold")
@@ -338,7 +338,7 @@ ok(has(g.texts, "bold, still recognisable"), "amount 100 is bold")
 slide("##count", 1)
 ok(has(g.texts, "Variation 1 of 1"), "one variation")
 ok(not has(g.buttons, ">") and not has(g.buttons, "<"), "no arrows for one: no dead controls")
-ok(has(g.buttons, "Make 1 variation"), "and the button says one")
+ok(has(g.buttons, "Make 1 Variation"), "and the button says one")
 
 -- Switches: off is grey, on is yellow.
 do
@@ -348,11 +348,11 @@ do
   click("Rhythm")
   i = buttonIndex("Rhythm")
   eq(g.ink[i].bg, 0xA9AFBAFF, "clicked, it is off and grey")
-  click("Towards the end")
-  i = buttonIndex("Towards the end")
+  click("Towards the End")
+  i = buttonIndex("Towards the End")
   eq(g.ink[i].bg, 0xFFF200FF, "Where: the chosen one is yellow")
-  toggle("Keep the first and last notes")
-  toggle("Grow across the series")
+  toggle("Keep the First and Last Notes")
+  toggle("Grow Across the Series")
 end
 
 -- Settings are saved on the way out and come back.
@@ -368,7 +368,7 @@ do
   frame()
   ok(has(g.texts, "bold, still recognisable"), "an amount out of range is clamped to 100")
   ok(has(g.texts, "Variation 1 of 1"), "a count below one is clamped to one")
-  eq(g.ink[buttonIndex("Towards the start")].bg, 0xFFF200FF, "a focus past the end is clamped to the last")
+  eq(g.ink[buttonIndex("Towards the Start")].bg, 0xFFF200FF, "a focus past the end is clamped to the last")
   eq(g.ink[buttonIndex("Rhythm")].bg, 0xFFF200FF, "a switch saved as 7 is simply on")
 end
 
@@ -380,12 +380,12 @@ P.ext = {}
 project("piano", "Piano")
 start()
 frame()
-ok(has(g.buttons, "Chord voicing") and has(g.buttons, "Chord quality"), "a piano part gets the chord switches")
-ok(has(g.checkboxes, "Chord changes may leave the scale"), "and, with Chord quality on, the box to leave the scale")
-click("Chord quality")
-ok(not has(g.checkboxes, "Chord changes may leave the scale"), "Chord quality off: the box goes, no dead controls")
-click("Chord quality")
-toggle("Chord changes may leave the scale")
+ok(has(g.buttons, "Chord Voicing") and has(g.buttons, "Chord Quality"), "a piano part gets the chord switches")
+ok(has(g.checkboxes, "Chord Changes May Leave the Scale"), "and, with Chord quality on, the box to leave the scale")
+click("Chord Quality")
+ok(not has(g.checkboxes, "Chord Changes May Leave the Scale"), "Chord quality off: the box goes, no dead controls")
+click("Chord Quality")
+toggle("Chord Changes May Leave the Scale")
 atexitFn()
 ok(P.ext["MidiVariator:state"]:find("outside=1"), "leaving the scale is remembered")
 P.ext = {}
@@ -398,16 +398,16 @@ P.ext = {}
 project("arpeggios", "Arps")
 start()
 frame()
-ok(has(g.buttons, "Chord quality"), "arpeggiated chords get the Chord quality switch")
-ok(not has(g.buttons, "Chord voicing"), "but not Chord voicing: no chords struck together")
-ok(has(g.checkboxes, "Chord changes may leave the scale"), "and the box to leave the scale")
+ok(has(g.buttons, "Chord Quality"), "arpeggiated chords get the Chord quality switch")
+ok(not has(g.buttons, "Chord Voicing"), "but not Chord voicing: no chords struck together")
+ok(has(g.checkboxes, "Chord Changes May Leave the Scale"), "and the box to leave the scale")
 checkInk("arpeggios")
 
 project("drums", "Beat", 8)
 start()
 frame()
 ok(has(g.texts, "drums"), "drums are recognised")
-ok(not has(g.buttons, "Notes"), "and get no Notes switch: a drum has no pitch to bend")
+ok(not buttonIndex("Notes"), "and get no Notes switch: a drum has no pitch to bend")
 checkInk("drums")
 
 -- Audition: the variation shown, in the original's place; stepping swaps
@@ -447,14 +447,14 @@ do
 
   -- Make while it plays: it stops first, and only the variations are made.
   click("Audition")
-  click("Make 4 variations")
+  click("Make 4 Variations")
   ok(not P.playing, "Make stops the audition")
   eq(#tr.items, 5, "and makes four, nothing else")
   eq(item.mute, 0, "the original unmuted")
 
   -- Closing the window while it plays.
   P.selected = { item }
-  click("Use selected items")
+  click("Use Selected Items")
   click("Audition")
   atexitFn()
   ok(not P.playing and item.mute == 0, "closing the window stops it")
@@ -474,31 +474,31 @@ do
   local tr = project("noir", "Noir")
   start()
   frame()
-  for _, name in ipairs({ "All new", "Home between", "In pairs", "A refrain" }) do
+  for _, name in ipairs({ "All New", "Home Between", "In Pairs", "A Refrain" }) do
     ok(has(g.buttons, name), "the form " .. name .. " is offered")
   end
   ok(has(g.texts, "A  A' A'' A''' A(4)"), "and the letters of the one chosen")
-  click("Home between")
+  click("Home Between")
   ok(has(g.texts, "A  A' A A'' A"), "Home between: A' A A'' A")
-  eq(g.ink[buttonIndex("Home between")].bg, 0xFFF200FF, "lit")
+  eq(g.ink[buttonIndex("Home Between")].bg, 0xFFF200FF, "lit")
   click(">")
-  ok(has(g.texts, "the original again, played afresh"), "the second is home")
+  ok(has(g.texts, "The original again, played afresh"), "the second is home")
   ok(has(g.texts, "No changes: the original, with only the feel new."), "with no changes")
   local seed = (1000 * 7 + 0 + 1 * 31) % 2147483000 + 1
   local src = { notes = F.noir, lead = 0, beats = 32, barBeats = 4, pulse = 1 }
   local o = V.defaults(); o.amount = 0.35; o.form = 2
   local expected = V.series(src, V.analyse(src, T), o, seed, 4, T, 1, {})
-  click("Make 4 variations")
+  click("Make 4 Variations")
   for i = 1, 4 do
     eq(notesOfItem(tr.items[i + 1]), notesOfList(expected[i].notes), ("form: variation %d as previewed"):format(i))
   end
   eq(V.likeness(F.noir, P.notesOf(tr.items[3])), 1, "the one home plays every note of the original")
 
   P.selected = { tr.items[1] }
-  click("Use selected items")
-  click("In pairs")
+  click("Use Selected Items")
+  click("In Pairs")
   click(">")
-  ok(has(g.texts, "an echo of variation 1: the same changes, played afresh"), "the second echoes the first")
+  ok(has(g.texts, "An echo of variation 1 — the same changes, played afresh"), "the second echoes the first")
   local box
   for _, l in ipairs(g.checkboxes) do if l:find("##change", 1, true) then box = box or l end end
   toggle(box)
@@ -506,7 +506,7 @@ do
   click("<")
   ok(g.ticked[box] == false, "is unticked in what it echoes too")
   local before = #tr.items
-  click("Make 4 variations")
+  click("Make 4 Variations")
   local a, b = P.notesOf(tr.items[before + 1]), P.notesOf(tr.items[before + 2])
   local pa, pb = {}, {}
   for _, n in ipairs(a) do pa[#pa + 1] = n.pitch end
@@ -514,13 +514,13 @@ do
   eq(table.concat(pb, ","), table.concat(pa, ","), "the echo made plays the same notes")
 
   slide("##count", 1)
-  ok(not has(g.buttons, "In pairs"), "one variation: no forms, no dead controls")
+  ok(not has(g.buttons, "In Pairs"), "one variation: no forms, no dead controls")
   atexitFn()
   ok(P.ext["MidiVariator:state"]:find("form=3"), "the form is remembered")
   P.ext["MidiVariator:state"] = "form=99;count=4"
   start()
   frame()
-  eq(g.ink[buttonIndex("A refrain")].bg, 0xFFF200FF, "a form past the end is clamped to the last")
+  eq(g.ink[buttonIndex("A Refrain")].bg, 0xFFF200FF, "a form past the end is clamped to the last")
 end
 
 -- Unticking a change: a box for each, the preview and what is made both
@@ -546,12 +546,12 @@ do
   local with = V.series(src, an, o, seed, 4, T, 1, {})
   local without = V.series(src, an, o, seed, 4, T, 1, {}, { [1] = { [id] = true } })
   ok(notesOfList(with[1].notes) ~= notesOfList(without[1].notes), "set up: unticking changes the notes")
-  click("Make 4 variations")
+  click("Make 4 Variations")
   eq(notesOfItem(tr.items[2]), notesOfList(without[1].notes), "what is made leaves the unticked change out")
   eq(notesOfItem(tr.items[3]), notesOfList(with[2].notes), "and the other variations are as they were")
   -- A setting changed: a new batch, every box ticked.
   P.selected = { tr.items[1] }
-  click("Use selected items")
+  click("Use Selected Items")
   local first
   for _, l in ipairs(g.checkboxes) do if l:find("##change", 1, true) then first = first or l end end
   toggle(first)
@@ -579,12 +579,12 @@ do
   local tr = project("noir", "Noir")
   start()
   frame()
-  ok(not has(g.buttons, "Develop the motif"), "at 35% there is no Develop switch: no dead controls")
+  ok(not has(g.buttons, "Develop the Motif"), "at 35% there is no Develop switch: no dead controls")
   slide("##amount", 70)
-  ok(not has(g.buttons, "Develop the motif"), "nor at 70%, where it cannot happen")
+  ok(not has(g.buttons, "Develop the Motif"), "nor at 70%, where it cannot happen")
   slide("##amount", 100)
-  ok(has(g.buttons, "Develop the motif"), "at 100% there is")
-  eq(g.ink[buttonIndex("Develop the motif")].bg, 0xFFF200FF, "on by default")
+  ok(has(g.buttons, "Develop the Motif"), "at 100% there is")
+  eq(g.ink[buttonIndex("Develop the Motif")].bg, 0xFFF200FF, "on by default")
   ok(has(g.texts, "and now and then a stretch developed"), "and the amount says so")
   local seed = (1000 * 7 + 0 + 1 * 31) % 2147483000 + 1
   local src = { notes = F.noir, lead = 0, beats = 32, barBeats = 4, pulse = 1 }
@@ -595,7 +595,7 @@ do
     for _, c in ipairs(var.moves) do if c.kind == "develop" then developed = developed + 1 end end
   end
   ok(developed > 0, "set up: this batch has something developed")
-  click("Make 4 variations")
+  click("Make 4 Variations")
   for i = 1, 4 do
     eq(notesOfItem(tr.items[i + 1]), notesOfList(expected[i].notes),
        ("at 100%%, variation %d is exactly the one previewed"):format(i))
@@ -613,13 +613,13 @@ do
         end
         click(">")
       end
-      click("New set")
+      click("New Set")
     end
     return found
   end
   ok(anyDeveloped(), "on: the list shows stretches developed")
-  click("Develop the motif")
-  eq(g.ink[buttonIndex("Develop the motif")].bg, 0xA9AFBAFF, "switched off, it is grey")
+  click("Develop the Motif")
+  eq(g.ink[buttonIndex("Develop the Motif")].bg, 0xA9AFBAFF, "switched off, it is grey")
   ok(not anyDeveloped(), "off: none")
   ok(not has(g.texts, "and now and then a stretch developed"), "and the amount no longer says so")
   atexitFn()
@@ -628,7 +628,7 @@ do
   project("drums", "Beat", 8)
   start()
   slide("##amount", 100)
-  ok(not has(g.buttons, "Develop the motif"), "drums are never developed: no switch")
+  ok(not has(g.buttons, "Develop the Motif"), "drums are never developed: no switch")
 end
 
 -- Two items at once, on two tracks, sounding together: varied as one
@@ -643,9 +643,9 @@ do
   P.item(b, 16, 4, F.single, "In the way")   -- only on the chords' track
   start()
   frame()
-  ok(has(g.texts, "\"Tune\"") and has(g.texts, "\"Harmony\""), "both sources listed")
-  ok(has(g.buttons, "Vary them together"), "items that sound together can be varied together")
-  eq(g.ink[buttonIndex("Vary them together")].bg, 0xFFF200FF, "on by default")
+  ok(has(g.texts, "“Tune”") and has(g.texts, "“Harmony”"), "both sources listed")
+  ok(has(g.buttons, "Vary Them Together"), "items that sound together can be varied together")
+  eq(g.ink[buttonIndex("Vary Them Together")].bg, 0xFFF200FF, "on by default")
   local srcs = Place.read()
   local combined = V.combine(srcs)
   local o = V.defaults(); o.amount = 0.35
@@ -653,10 +653,10 @@ do
   local run = V.series(combined, V.analyse(combined, T), o, seed, 4, T, 1, {})
   local listed = false
   for _, l in ipairs(g.checkboxes) do
-    if l:find("\"" .. srcs[1].name .. "\" + \"" .. srcs[2].name .. "\"", 1, true) then listed = true end
+    if l:find("“" .. srcs[1].name .. "” + “" .. srcs[2].name .. "”", 1, true) then listed = true end
   end
   ok(listed, "the changes are listed once, for both")
-  click("Make 4 variations")
+  click("Make 4 Variations")
   eq(#a.items, 5, "the melody's variations on the melody's track")
   eq(#b.items, 6, "the chords' on the chords' track")
   local function sorted(tr)
@@ -676,21 +676,21 @@ do
   end
   -- Varied in place together.
   P.selected = { va[1], vb[1] }
-  click("Vary selected in place")
+  click("Vary Selected in Place")
   ok(has(g.texts, "Varied 2 items in place"), "varied in place together")
 
   -- Off: each on its own, as before.
   P.selected = { a.items[1], b.items[1] }
-  click("Use selected items")
-  click("Vary them together")
-  eq(g.ink[buttonIndex("Vary them together")].bg, 0xA9AFBAFF, "switched off")
+  click("Use Selected Items")
+  click("Vary Them Together")
+  eq(g.ink[buttonIndex("Vary Them Together")].bg, 0xA9AFBAFF, "switched off")
   srcs = Place.read()
   -- Make and Vary selected in place each drew a new seed.
   local function nextSeed(x) return (1000 * 7 + 0 + x * 31) % 2147483000 + 1 end
   local alone = V.series(srcs[1], V.analyse(srcs[1], T), o, nextSeed(nextSeed(seed)), 4, T, 1, {})
   local had = {}
   for _, it in ipairs(srcs[1].track.items) do had[it] = true end
-  click("Make 4 variations")
+  click("Make 4 Variations")
   local firstNew
   for _, it in ipairs(srcs[1].track.items) do
     if not had[it] and (not firstNew or P.posQN(it) < P.posQN(firstNew)) then firstNew = it end
@@ -707,11 +707,11 @@ do
   P.selected = { P.item(a, 0, 16, F.twinkle, "One"), P.item(a, 32, 16, F.twinkle, "Two") }
   start()
   frame()
-  ok(not has(g.buttons, "Vary them together"), "items apart in time: nothing to vary together")
+  ok(not has(g.buttons, "Vary Them Together"), "items apart in time: nothing to vary together")
   project("noir", "Noir")
   start()
   frame()
-  ok(not has(g.buttons, "Vary them together"), "nor one item alone")
+  ok(not has(g.buttons, "Vary Them Together"), "nor one item alone")
 end
 
 -- A collapsed window still pops its theme.
@@ -730,8 +730,8 @@ do
   start()
   frame()
   reaper.DeleteTrackMediaItem(tr2, it)
-  click("Make 4 variations")
-  ok(has(g.texts, "The item has gone"), "a deleted source is noticed, not written from")
+  click("Make 4 Variations")
+  ok(has(g.texts, "The item is no longer in the project"), "a deleted source is noticed, not written from")
   eq(#tr2.items, 0, "and nothing is made")
 end
 
@@ -757,14 +757,14 @@ do
   P.selected = { copies[1], copies[2], copies[3] }
   start()
   frame()
-  click("Vary selected in place")
+  click("Vary Selected in Place")
   ok(has(g.texts, "Varied 3 items in place"), "pooled and file items are varied in place")
   for i, it in ipairs(copies) do ok(not it.alive, ("copy %d was replaced"):format(i)) end
   eq(#P.selected, 3, "by three new items, selected")
-  ok(has(g.buttons, "Put back the original"), "which can be put back")
-  click("Vary selected in place")
+  ok(has(g.buttons, "Put Back the Original"), "which can be put back")
+  click("Vary Selected in Place")
   ok(has(g.texts, "Varied 3 items in place"), "and varied again")
-  click("Put back the original")
+  click("Put Back the Original")
   ok(has(g.texts, "Put the original back in 3 items."), "and put back")
 end
 
@@ -788,17 +788,17 @@ do
   ok(has(g.texts, "Heard as C Major."), "it says what it heard")
   eq(g.ink[buttonIndex("C")].bg, 0xFFF200FF, "the heard root is lit")
   eq(g.ink[buttonIndex("Major")].bg, 0xFFF200FF, "and the heard scale")
-  ok(not has(g.buttons, "Back to what it heard"), "nothing to go back to yet: no dead controls")
-  ok(not has(g.checkboxes, "Bring the original into this scale"), "nor anything to bring into a scale")
-  ok(has(g.texts, "Pick another scale to take the variations there."), "and it says what picking does")
+  ok(not has(g.buttons, "Back to What It Heard"), "nothing to go back to yet: no dead controls")
+  ok(not has(g.checkboxes, "Bring the Original into This Scale"), "nor anything to bring into a scale")
+  ok(has(g.texts, "Choose another scale to take the variations there."), "and it says what picking does")
 
   -- Pivot to C minor.
   click("Minor (Natural)")
   eq(g.ink[buttonIndex("Minor (Natural)")].bg, 0xFFF200FF, "the picked scale is lit")
-  ok(has(g.buttons, "Back to what it heard"), "now there is a way back")
-  ok(has(g.checkboxes, "Bring the original into this scale"), "and the pivot is offered")
-  ok(has(g.texts, "Moved into C Minor (Natural): E -> Eb, A -> Ab."), "and says what the pivot moves")
-  click("Make 4 variations")
+  ok(has(g.buttons, "Back to What It Heard"), "now there is a way back")
+  ok(has(g.checkboxes, "Bring the Original into This Scale"), "and the pivot is offered")
+  ok(has(g.texts, "Moved into C Minor (Natural): E → Eb, A → Ab."), "and says what the pivot moves")
+  click("Make 4 Variations")
   local made = {}
   for i = 2, 5 do made[#made + 1] = tr.items[i] end
   local pcs = pcsOfItems(made)
@@ -810,11 +810,11 @@ do
   local hasE = false
   for _, n in ipairs(kept) do if n.pitch == 64 then hasE = true end end
   ok(hasE, "but the original kept inside is the real one, in C major")
-  click("Put back the original")
+  click("Put Back the Original")
   ok(pcsOfItems({ tr.items[2] })[4], "so putting it back brings the E back")
 
   -- Vary in place follows the picked scale too.
-  click("Vary selected in place")
+  click("Vary Selected in Place")
   pcs = pcsOfItems(made)
   outside = {}
   for pc in pairs(pcs) do if not cminor[pc] then outside[#outside + 1] = pc end end
@@ -822,36 +822,36 @@ do
 
   -- Not pivoting: the original's notes stay, the changes use the scale.
   P.selected = { tr.items[1] }
-  toggle("Bring the original into this scale")
+  toggle("Bring the Original into This Scale")
   ok(has(g.texts, "notes of the original outside C Minor (Natural) stay as they are"),
      "unticked, it says the original stays as it is")
 
   -- Picking the heard key again is going back.
   click("Major")
-  ok(not has(g.buttons, "Back to what it heard"), "picking what it heard goes back to it")
+  ok(not has(g.buttons, "Back to What It Heard"), "picking what it heard goes back to it")
   click("D")
-  ok(has(g.buttons, "Back to what it heard"), "a new root is a pick")
-  click("Back to what it heard")
+  ok(has(g.buttons, "Back to What It Heard"), "a new root is a pick")
+  click("Back to What It Heard")
   eq(g.ink[buttonIndex("C")].bg, 0xFFF200FF, "back: C lit again")
-  ok(not has(g.buttons, "Back to what it heard"), "and the way back hides itself")
+  ok(not has(g.buttons, "Back to What It Heard"), "and the way back hides itself")
 
   -- A scale every note is already in: nothing to bring in.
   click("F")
   ok(has(g.texts, "Every note of the original is in F Major already"), "Twinkle has no B: F major holds it all")
-  ok(not has(g.checkboxes, "Bring the original into this scale"), "and no box that would do nothing")
+  ok(not has(g.checkboxes, "Bring the Original into This Scale"), "and no box that would do nothing")
 
   -- Reading another item forgets the pick: it belonged to that music.
-  click("Use selected items")
-  ok(not has(g.buttons, "Back to what it heard"), "a new source starts from what is heard")
+  click("Use Selected Items")
+  ok(not has(g.buttons, "Back to What It Heard"), "a new source starts from what is heard")
 
   -- Stay in the original's notes: the picker goes away.
-  click("Stay in the original's notes")
+  click("Stay in the Original’s Notes")
   ok(has(g.texts, "Changes use only C D E F G A."), "it lists the notes it will use")
   ok(not has(g.buttons, "Minor (Natural)") and not has(g.buttons, "Db"), "no picker while it is on")
-  eq(g.ink[buttonIndex("Stay in the original's notes")].bg, 0xFFF200FF, "the switch is lit")
+  eq(g.ink[buttonIndex("Stay in the Original’s Notes")].bg, 0xFFF200FF, "the switch is lit")
   local before = #tr.items
   slide("##amount", 100)
-  click("Make 4 variations")
+  click("Make 4 Variations")
   made = {}
   for i = before + 1, #tr.items do made[#made + 1] = tr.items[i] end
   eq(#made, 4, "made")
@@ -864,7 +864,7 @@ do
   P.ext["MidiVariator:state"] = "own=5;fit=-2"
   start()
   frame()
-  eq(g.ink[buttonIndex("Stay in the original's notes")].bg, 0xFFF200FF, "own clamped to on")
+  eq(g.ink[buttonIndex("Stay in the Original’s Notes")].bg, 0xFFF200FF, "own clamped to on")
 end
 
 -- Drums have no scale step, and the steps close up.
@@ -873,7 +873,7 @@ do
   start()
   frame()
   eq(#g.headings, 3, "drums: three steps")
-  eq(g.headings[2], "What may change", "the scale step is left out")
+  eq(g.headings[2], "What May Change", "the scale step is left out")
   ok(has(g.texts, "2"), "and numbered on without a gap")
 end
 
@@ -886,9 +886,9 @@ do
   P.ext = {}
   start()
   frame()
-  ok(has(g.texts, "Heard as C Major in \"Tune\"."), "the key comes from the item that has one, named")
+  ok(has(g.texts, "Heard as C Major in “Tune”."), "the key comes from the item that has one, named")
   click("Minor (Natural)")
-  click("Make 4 variations")
+  click("Make 4 Variations")
   eq(#a.items, 5, "the drums are varied")
   eq(#b.items, 5, "and the tune")
 end
@@ -903,16 +903,16 @@ local STATES = {
   { "drums", function() project("drums", "Beat", 8) end },
   { "variations selected", function()
       local t = project("twinkle", "Twinkle")
-      start(); frame(); click("Make 4 variations")
+      start(); frame(); click("Make 4 Variations")
     end },
   { "nothing selected", function() P.reset() end },
   -- Picked in the window, so done after the script starts (third entry).
   { "a scale picked", function() project("twinkle", "Twinkle") end,
     function() click("Dorian") end },
   { "a pivot switched off", function() project("twinkle", "Twinkle") end,
-    function() click("Minor (Natural)"); toggle("Bring the original into this scale") end },
+    function() click("Minor (Natural)"); toggle("Bring the Original into This Scale") end },
   { "own notes", function() project("twinkle", "Twinkle") end,
-    function() click("Stay in the original's notes") end },
+    function() click("Stay in the Original’s Notes") end },
   { "arpeggios", function() project("arpeggios", "Arps") end },
   { "a tune and its chords", function()
       P.reset()
@@ -950,12 +950,12 @@ for _, state in ipairs(STATES) do
     end
   end
 end
-for _, name in ipairs({ "Use selected items", "Notes", "Rhythm", "Add notes", "Leave notes out",
-                        "Chord voicing", "Chord quality", "Timing", "Velocity", "Lengths", "Anywhere", "Towards the end", "Towards the start",
-                        "<", ">", "New set", "Make 4 variations", "Vary selected in place",
-                        "Put back the original", "Stay in the original's notes", "Back to what it heard",
+for _, name in ipairs({ "Use Selected Items", "Notes", "Rhythm", "Add Notes", "Leave Notes Out",
+                        "Chord Voicing", "Chord Quality", "Timing", "Velocity", "Lengths", "Anywhere", "Towards the End", "Towards the Start",
+                        "<", ">", "New Set", "Make 4 Variations", "Vary Selected in Place",
+                        "Put Back the Original", "Stay in the Original’s Notes", "Back to What It Heard",
                         "Db", "B", "Major", "Minor Pentatonic", "Diminished Half-Whole",
-                        "Develop the motif", "Vary them together", "Audition", "All new", "Home between", "In pairs", "A refrain" }) do
+                        "Develop the Motif", "Vary Them Together", "Audition", "All New", "Home Between", "In Pairs", "A Refrain" }) do
   ok(reached[name], "the sweep reached '" .. name .. "'")
 end
 

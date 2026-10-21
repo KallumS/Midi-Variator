@@ -191,7 +191,7 @@ applied from the root the reader finds:
   muddied the bass: "G7 became DminAdd11/G"), else re-purposes a doubled
   inner note, else - for a block chord only, where the top is not a tune -
   goes just above the top.
-- In the scale unless `opts.outside` ("Chord changes may leave the scale").
+- In the scale unless `opts.outside` ("Chord Changes May Leave the Scale").
 - A new note may not grind against anything **outside** the chord
   (`outsideClash`); inside, the colour is the point. `test_vary`'s clash
   check therefore ignores notes struck together when a quality changed.
@@ -222,12 +222,12 @@ untick** - the other changes would move. `moves` lists all, with `skipped`;
 
 ### Forms: motif memory ([0011](docs/decisions/0011-forms-and-echoes.md))
 
-`opts.form` indexes `M.FORMS` (All new, Home between, In pairs, A refrain);
+`opts.form` indexes `M.FORMS` (All New, Home Between, In Pairs, A Refrain);
 each maps a place to 0 (home: the original, feel only - `opts.home`) or a
 variation number. **An echo** uses its original's place, seed, unticked
 changes and a copy of the memory as its original found it, with its own
 feel seed (`opts.feelSeed`). Echoes and homes add nothing to the memory.
-All new is exactly the old series.
+All New is exactly the old series.
 
 ### Together ([0012](docs/decisions/0012-items-that-sound-together-vary-as-one.md))
 
@@ -279,7 +279,7 @@ bass (`nearestPart`). `V.split` gives each item its notes back.
   its FX instead. Outside any undo block; everything marked
   `P_EXT:MidiVariatorAudition` (`item`, `muted`, `track`) and `sweep`ed at
   start. Stop it before anything that writes (Make, in place, Put back,
-  Use selected items) and at exit.
+  Use Selected Items) and at exit.
 
 ## The window
 
@@ -289,25 +289,38 @@ every button wears the dark ink `#14171C`; the theme is popped outside the
 `visible` test; a switch that is on is the accent `#FFF200`. The roll draws
 **the original grey `#6D7581` and the variation yellow**.
 
-Four steps - **Source, Scale, What may change, Variations** - numbered by
+Four steps - **Source, Scale, What May Change, Variations** - numbered by
 `heading` itself, so drums (which get no Scale step) number 1, 2, 3 with no
 gap. Only step 1 until something is read. **No dead controls**: no Scale
-step for drums, no picker while *Stay in the original's notes* is on, no
-*Chord changes may leave the scale* unless Chord quality is on and there
+step for drums, no picker while *Stay in the Original’s Notes* is on, no
+*Chord Changes May Leave the Scale* unless Chord quality is on and there
 are chords or arpeggios, no
-*Back to what it heard* until something is picked, no *Bring the original
-into this scale* when every note is already in it, no Chord voicing
+*Back to What It Heard* until something is picked, no *Bring the Original
+into This Scale* when every note is already in it, no Chord voicing
 without chords struck together, no Chord quality without chords or
 arpeggios, no Notes switch for drums, no arrows for one variation, no
-*Develop the motif* at 70% or below or for drums, no *Form* for one
-variation, no *Vary them together* unless selected items overlap,
-*Vary selected in place* only with MIDI items selected, *Put back the
-original* only when a selected item is a variation.
+*Develop the Motif* at 70% or below or for drums, no *Form* for one
+variation, no *Vary Them Together* unless selected items overlap,
+*Vary Selected in Place* only with MIDI items selected, *Put Back the
+Original* only when a selected item is a variation.
+
+**Text follows Apple's writing guidelines**
+([0014](docs/decisions/0014-window-text-follows-apples-writing-guidelines.md),
+after Noterator's 0053): title-style buttons, switches, boxes and headings
+with a verb first where they act ("Vary Selected in Place", "Make 4
+Variations"), sentence-case tooltips, status lines and change sentences
+("Bar 2, beat 1: G7 became G9"), messages that say what to do, an em dash
+between phrases, an en dash in ranges ("Bars 1–2"), curly quotes and
+apostrophes. Use the same word as Midi Suggester for the same idea (*Use
+Selected Items*, *Audition*, *click*). Chord symbols, note names and
+ScaleView's scale names stay as they are; preferences are saved by key and
+index, so a label can change freely - but the item names' " - variation N"
+is read back by `Place` and stays.
 
 The list of changes has a **box per change** (label
 `text##change<j>.<id>`); unticking writes `ui.skips[j][place]` - the place
 an echo echoes - and sets `ui.dirty` directly, because `touched()` clears
-every box. **Audition / Stop** sits by New set; the roll draws a playhead.
+every box. **Audition / Stop** sits by New Set; the roll draws a playhead.
 With items together, the group's changes are listed once, on its first
 item, prefixed with every item's name.
 
@@ -319,11 +332,11 @@ after every Make and every Vary in place.
 The **picked scale belongs to the item**, like Midi Suggester's key: it is
 not saved, and reading a new source forgets it. Picking the heard key again
 clears the pick. With several sources, the key shown is the first one that
-has a key (drums have none), named. *Vary selected in place* uses the
+has a key (drums have none), named. *Vary Selected in Place* uses the
 picked scale too.
 
-Preferences (including *Stay in the original's notes* and *Bring the
-original into this scale*) are saved in one ExtState string and clamped on
+Preferences (including *Stay in the Original’s Notes* and *Bring the
+Original into This Scale*) are saved in one ExtState string and clamped on
 load; the test loads nonsense to prove it.
 
 ## Where it stands
@@ -335,6 +348,7 @@ load; the test loads nonsense to prove it.
 | 1.1.1 | Fix: *Vary selected in place* on pooled, file or looped items raised "MediaItem expected". **Found by the user running it in REAPER** - the first real run; everything else "seems to be working well". |
 | 1.2 | Chord quality: chords changed to a neighbouring quality, read by ScaleView Pro's reader, in the scale unless allowed out. "Chords" split into *Chord voicing* and *Chord quality*. Not yet run in REAPER. |
 | 1.3 | Develop the motif near 100%; arpeggiated chords change quality; untick a change; forms (A A' A A''); vary a melody and its chords together; audition. On `claude/inspiring-hawking-mpmyqg`. **Not yet run in REAPER** - audition especially (muting, the transport, fixed lanes) has only met the mock. |
+| 1.3.1 | The window's words follow Apple's writing guidelines ([0014](docs/decisions/0014-window-text-follows-apples-writing-guidelines.md)): title-style buttons and switches, messages that say what to do, em dashes and curly quotes. On `claude/adoring-feynman-bihxp2`. |
 
 **Known limits, all deliberate for now:**
 

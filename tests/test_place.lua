@@ -125,7 +125,7 @@ do
   eq(result, Place.OK, "made")
   eq(made, 3, "three")
   balanced("make")
-  eq(P.undoNames[#P.undoNames], "Midi Variator: make variations", "as one undo step")
+  eq(P.undoNames[#P.undoNames], "Midi Variator: Make Variations", "as one undo step")
   eq(#tr.items, 4, "on the original's track")
   for i = 1, 3 do
     local it = tr.items[i + 1]
@@ -308,7 +308,7 @@ do
   eq(restored, 1, "one item")
   same(P.notesOf(item), original, "exactly as it was")
   balanced("restore")
-  eq(P.undoNames[#P.undoNames], "Midi Variator: put back the original", "as one undo step")
+  eq(P.undoNames[#P.undoNames], "Midi Variator: Put Back the Original", "as one undo step")
 
   P.selected = { P.item(tr, 32, 16, F.ode, "Ode") }
   eq(select(1, Place.restore(Place.selectedItems())), Place.NOTHING, "an item that is not a variation has nothing to put back")
