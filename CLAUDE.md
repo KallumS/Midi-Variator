@@ -332,6 +332,19 @@ every button through `pick()` (never narrower than its label), every text
 colour 7:1. `tests/hig_mock.lua` - the same file in every ReaImGui repo of
 the family - adds the calls to the mock and checks each of these per widget.
 
+**The final sweep** (1.5, 0015's dated section, after Midi Suggester's 1.3):
+menus and tooltips a step lighter than the window (`#2A2F37`, edge
+`#3A404A`), menu keys `#BFC5CE`, every theme colour a blue-shifted grey
+(checked); every box and slider has a 3:1 edge (`checkbox()`, `slider()`,
+`BOX_EDGE`). Rules for new code: every item in a row goes through
+`flowPlace()` (`flowNext()` for a button, `flowWords()` for words), so it
+wraps rather than running off the edge - `test_ui` places every item and
+fails on one past it; secondary text is `dim()`, which wraps; a symbol-only
+button says its name in a tooltip; anything that throws away unticked boxes
+calls `letGo("Doing it")` first (a setting changed does not: it is a
+different batch, and the slider would ask at every step). Esc lets go of
+the keyboard's place or a menu before it closes the window (`ui.held`).
+
 The list of changes has a **box per change** (label
 `text##change<j>.<id>`); unticking writes `ui.skips[j][place]` - the place
 an echo echoes - and sets `ui.dirty` directly, because `touched()` clears
@@ -365,6 +378,7 @@ load; the test loads nonsense to prove it.
 | 1.3 | Develop the motif near 100%; arpeggiated chords change quality; untick a change; forms (A A' A A''); vary a melody and its chords together; audition. On `claude/inspiring-hawking-mpmyqg`. **Not yet run in REAPER** - audition especially (muting, the transport, fixed lanes) has only met the mock. |
 | 1.3.1 | The window's words follow Apple's writing guidelines ([0014](docs/decisions/0014-window-text-follows-apples-writing-guidelines.md)): title-style buttons and switches, messages that say what to do, em dashes and curly quotes. On `claude/adoring-feynman-bihxp2`. |
 | 1.4 | The rest of Apple's HIG Foundations ([0015](docs/decisions/0015-apples-hig-foundations.md)): 7:1 text, Text Size up to 200%, 28-point controls, the keyboard alone, the chosen bar, the message at the top. On `ccr-f2d9adc9-lanc9o`, built on the 1.3.1 branch. **Not yet run in REAPER.** |
+| 1.5 | The final sweep of the Foundations: lighter menus, 3:1 edges on boxes and sliders, rows that wrap, a minimum size, Esc lets go first, asking before unticked changes are thrown away, bold headings, the item in the title, named arrows. On `ccr-f2d9adc9-lanc9o`. **Not yet run in REAPER.** |
 
 **Known limits, all deliberate for now:**
 

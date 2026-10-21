@@ -209,10 +209,21 @@ The window follows Apple's design guidelines for Mac apps
   and **Cmd+0** goes back to 100%. It remembers your choice.
 - **The keyboard alone works.** Press **Tab** or an arrow key and a white
   ring appears round a control; Tab and the arrows move it, and **Space** or
-  **Return** clicks. **Esc** closes the window.
+  **Return** clicks. **Esc** first lets go of the ring (or closes the View
+  menu); pressed again, with nothing held, it closes the window.
 - **Messages appear at the top** and stay until you click **Dismiss**.
 - A chosen button is yellow **and** has a dark bar under its name, so it
-  doesn't depend on seeing colour.
+  doesn't depend on seeing colour. In the picture, the original's notes are
+  the darker ones and the variation's the bright ones, and a line under it
+  says so. The **<** and **>** arrows say their names when you hover them.
+- Rows of buttons and long lines of text wrap at the window's edge, so
+  nothing is cut off at 200%; a change's line that is too long for the
+  window shows in full when you hover it. The window will not shrink smaller
+  than its widest row, and its title names the item you are working on.
+- **Unticked changes are not thrown away without asking.** *New Set*,
+  *Use Selected Items* or closing the window would lose them, so it asks
+  first: click *Cancel*, then *Make*, to keep them. (Changing a setting
+  makes a different batch, so it starts with every box ticked, as before.)
 
 ## If something goes wrong
 

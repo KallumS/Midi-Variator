@@ -41,3 +41,22 @@ The same as Midi Suggester's 0009, so the family's windows behave alike:
   Contrast, right to left. Escape still closes the window.
 - Unverified in REAPER: the zoom keys reaching the window, and which face
   "sans-serif" resolves to.
+
+## Final sweep, 16 October 2026 (1.5)
+
+Every Foundations guideline checked again
+([`apple-hig-review.md`](../apple-hig-review.md#final-sweep-16-october-2026)),
+with the family's shared decisions and Midi Suggester 1.3's findings:
+
+- **Menus and tooltips a step lighter** (`#2A2F37`, edge `#3A404A`); menu
+  bar, highlight and resize corner from the ramp; menu keys `#BFC5CE`.
+- **Controls' edges 3:1**: every box and slider (`#8A919C`), the scrollbar
+  thumb (`#6D7581`).
+- **Rows wrap** (`flowPlace`, `flowWords`), secondary text wraps, a minimum
+  window size; a change's whole line is in its tooltip.
+- **Escape** lets go first. This reverses "Escape still closes the window"
+  above.
+- **Asking first** before *New Set*, *Use Selected Items* or closing throws
+  unticked boxes away; not on a setting changed (a different batch).
+- Bold headings, the item in the title, a line naming the roll's notes, the
+  arrows named.

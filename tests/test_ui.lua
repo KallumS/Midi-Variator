@@ -32,6 +32,8 @@ local function resetFrame()
   g.buttons, g.ink, g.texts, g.checkboxes, g.headings, g.sliders = {}, {}, {}, {}, {}, {}
   g.ticked = {}
   g.rects = {}
+  g.theme, g.begun, g.fontStack, g.varStack, g.tips, g.lines = {}, false, {}, {}, {}, {}
+  g.headingFonts, g.boxes, g.lineX, g.same, g.overflow = {}, {}, 0, false, nil
 end
 resetFrame()
 
@@ -40,8 +42,14 @@ local consts = { "Col_Text", "Col_TextDisabled", "Col_WindowBg", "Col_PopupBg", 
   "Col_FrameBg", "Col_FrameBgHovered", "Col_FrameBgActive", "Col_TitleBg", "Col_TitleBgActive",
   "Col_TitleBgCollapsed", "Col_Button", "Col_ButtonHovered", "Col_ButtonActive", "Col_CheckMark",
   "Col_SliderGrab", "Col_SliderGrabActive", "Col_Separator", "Col_ScrollbarBg", "Col_ScrollbarGrab",
-  "Col_ScrollbarGrabHovered", "Col_ScrollbarGrabActive", "Cond_FirstUseEver", "Key_Escape" }
+  "Col_ScrollbarGrabHovered", "Col_ScrollbarGrabActive", "Cond_FirstUseEver", "Key_Escape",
+  "Col_MenuBarBg", "Col_Header", "Col_HeaderHovered", "Col_HeaderActive", "Col_ResizeGrip",
+  "Col_ResizeGripHovered", "Col_ResizeGripActive", "StyleVar_FrameBorderSize" }
 for i, k in ipairs(consts) do ImGui[k] = i end
+local colName = {}
+for _, k in ipairs(consts) do if k:find("^Col_") then colName[ImGui[k]] = k end end
+ImGui.FontFlags_Bold = 1
+ImGui.PopupFlags_AnyPopup = 3072
 
 local function effective(idx)
   for i = #g.colStack, 1, -1 do if g.colStack[i].idx == idx then return g.colStack[i].col end end
@@ -50,17 +58,79 @@ end
 function ImGui.CreateContext(name) return { name = name } end
 function ImGui.SetNextWindowSize() end
 function ImGui.SetNextWindowBgAlpha(_, a) assert(a >= 0 and a <= 1) end
-function ImGui.Begin() return not g.collapsed, true end
+-- SetNextWindowSizeConstraints(ctx, size_min_w, size_min_h, size_max_w, size_max_h, optional custom_callback)
+function ImGui.SetNextWindowSizeConstraints(_, minW, minH, maxW, maxH)
+  for _, v in ipairs({ minW, minH, maxW, maxH }) do
+    if type(v) ~= "number" then error("SetNextWindowSizeConstraints takes four numbers") end
+  end
+  g.minW, g.minH = minW, minH
+end
+function ImGui.Begin(_, name)
+  g.title, g.begun = name, true
+  return not g.collapsed, not g.closeClick
+end
 function ImGui.End() end
-function ImGui.IsKeyPressed() return false end
-function ImGui.SeparatorText(_, s) g.headings[#g.headings + 1] = s end
-function ImGui.Text(_, s)
+function ImGui.IsKeyPressed(_, key) return (g.keys and g.keys[key]) or false end
+-- bool IsAnyItemFocused(ctx); bool IsPopupOpen(ctx, string str_id, optional integer flags)
+function ImGui.IsAnyItemFocused() return g.focused or false end
+function ImGui.IsPopupOpen(_, id, flags)
+  if type(id) ~= "string" then error("IsPopupOpen(ctx, str_id, flags)") end
+  return (flags == ImGui.PopupFlags_AnyPopup and g.popup) or false
+end
+-- ImGui_Font font = CreateFont(string family_or_file, integer size, optional integer flags)
+function ImGui.CreateFont(family, size, flags)
+  return { family = family, size = size, bold = flags and flags & ImGui.FontFlags_Bold ~= 0 }
+end
+function ImGui.PushFont(_, font) g.fontStack[#g.fontStack + 1] = font end
+function ImGui.PopFont() g.fontStack[#g.fontStack] = nil end
+local function fontSize() return g.fontStack[1] and g.fontStack[1].size or 13 end
+function ImGui.PushStyleVar(_, idx, a)
+  if idx == ImGui.StyleVar_ItemSpacing then g.spacing = a end
+  if idx == ImGui.StyleVar_ItemInnerSpacing then g.inner = a end
+  if idx == ImGui.StyleVar_FramePadding then g.padX = a end
+  g.varStack[#g.varStack + 1] = { idx = idx, a = a }
+end
+function ImGui.PopStyleVar(_, n) for _ = 1, (n or 1) do g.varStack[#g.varStack] = nil end end
+local function styleVar(idx)
+  for i = #g.varStack, 1, -1 do if g.varStack[i].idx == idx then return g.varStack[i].a end end
+end
+
+-- Where each item would sit, to catch a row that runs off the window's edge
+-- (the mock's window is GetContentRegionAvail's 720 wide). A change's box is
+-- let off: its line cannot wrap, so its tooltip carries the whole of it.
+local AVAIL = 720
+local function layout(label, w, wraps)
+  local x = g.same and (g.sameAt or (g.lineX + g.sameGap)) or 0
+  g.same, g.sameAt = false, nil
+  if wraps then w = math.min(w, AVAIL - x) end
+  g.lineX = x + w
+  if (x + w > AVAIL + 0.5 or (wraps and x > AVAIL - 1)) and not tostring(label):find("##change", 1, true) then
+    g.overflow = g.overflow or label
+  end
+end
+function ImGui.SameLine(_, offset, spacing)
+  g.same = true
+  g.sameAt = (offset and offset > 0) and offset or nil
+  g.sameGap = (spacing and spacing >= 0) and spacing or (g.spacing or 8)
+end
+function ImGui.SeparatorText(_, s)
+  local f = g.fontStack[#g.fontStack]
+  g.headingFonts[#g.headingFonts + 1] = f and f.bold or false
+  layout(s, ImGui.CalcTextSize(nil, s))
+  g.headings[#g.headings + 1] = s
+end
+local function text(s, wraps)
   if type(s) ~= "string" then error("Text got a " .. type(s)) end
   g.texts[#g.texts + 1] = s
+  layout(s, ImGui.CalcTextSize(nil, s), wraps)
 end
-function ImGui.SameLine() end
-function ImGui.Dummy() end
-function ImGui.SetNextItemWidth(_, w) if type(w) ~= "number" then error("width is a " .. type(w)) end end
+function ImGui.Text(_, s) text(s) end
+function ImGui.TextWrapped(_, s) text(s, true) end
+function ImGui.Dummy(_, w) layout("a gap", w or 0) end
+function ImGui.SetNextItemWidth(_, w)
+  if type(w) ~= "number" then error("width is a " .. type(w)) end
+  g.itemWidth = w
+end
 function ImGui.PushID(_, v)
   if v == nil then error("PushID with nil") end
   g.idDepth = g.idDepth + 1
@@ -74,14 +144,16 @@ function ImGui.PushStyleColor(_, idx, col)
   if type(col) ~= "number" or col % 256 == 0 then error("style colour must be an opaque 0xRRGGBBAA") end
   g.colStack[#g.colStack + 1] = { idx = idx, col = col }
   g.colDepth = g.colDepth + 1
+  if not g.begun then g.theme[colName[idx] or idx] = col end
 end
 function ImGui.PopStyleColor(_, n)
   for _ = 1, (n or 1) do g.colStack[#g.colStack] = nil end
   g.colDepth = g.colDepth - (n or 1)
   if g.colDepth < 0 then error("PopStyleColor without a push") end
 end
-function ImGui.Button(_, label)
+function ImGui.Button(_, label, w)
   if type(label) ~= "string" then error("Button label is a " .. type(label)) end
+  layout(label, (w and w > 0) and w or ImGui.CalcTextSize(nil, (label:gsub("##.*$", ""))) + 2 * (g.padX or 8))
   g.buttons[#g.buttons + 1] = label
   g.ink[#g.buttons] = { bg = effective(ImGui.Col_Button), text = effective(ImGui.Col_Text) }
   if g.clickTarget == #g.buttons then g.clicked = label; return true end
@@ -91,6 +163,9 @@ function ImGui.Checkbox(_, label, v)
   if type(v) ~= "boolean" then error("Checkbox value is a " .. type(v)) end
   g.checkboxes[#g.checkboxes + 1] = label
   g.ticked[label] = v
+  g.boxes[#g.boxes + 1] = { label = label, edge = effective(ImGui.Col_Border),
+                            size = styleVar(ImGui.StyleVar_FrameBorderSize) or 0 }
+  layout(label, fontSize() * 28 / 13 + (g.inner or 0) + ImGui.CalcTextSize(nil, (label:gsub("##.*$", ""))))
   if g.toggle == label then return true, not v end
   return false, v
 end
@@ -101,23 +176,34 @@ function ImGui.SliderInt(_, label, v, lo, hi, fmt)
   end
   if v < lo or v > hi then error("slider value outside its range") end
   g.sliders[#g.sliders + 1] = label
+  g.boxes[#g.boxes + 1] = { label = label, edge = effective(ImGui.Col_Border),
+                            size = styleVar(ImGui.StyleVar_FrameBorderSize) or 0 }
+  layout(label, g.itemWidth or 0)
   if g.slide and g.slide[label] then return true, g.slide[label] end
   return false, v
 end
 function ImGui.IsItemHovered() return true end
-function ImGui.SetTooltip(_, s) if type(s) ~= "string" then error("tooltip is a " .. type(s)) end end
-function ImGui.GetContentRegionAvail() return 720, 400 end
+function ImGui.SetTooltip(_, s)
+  if type(s) ~= "string" then error("tooltip is a " .. type(s)) end
+  g.tips[#g.tips + 1] = s
+end
+-- As ImGui: from where the next item goes to the window's right edge.
+function ImGui.GetContentRegionAvail()
+  local x = g.same and (g.sameAt or (g.lineX + g.sameGap)) or 0
+  return 720 - x, 400
+end
 function ImGui.GetWindowDrawList() return {} end
 function ImGui.GetCursorScreenPos() return 0, 0 end
-function ImGui.InvisibleButton() return false end
+function ImGui.InvisibleButton(_, id, w) layout(id, w); return false end
 function ImGui.DrawList_AddRectFilled(_, x1, y1, x2, y2, col)
   if x2 < x1 or y2 < y1 then error("rect is inside out") end
   g.rects[#g.rects + 1] = col
 end
-function ImGui.DrawList_AddLine(_, x1, y1, x2, y2, col)
+function ImGui.DrawList_AddLine(_, x1, y1, x2, y2, col, thick)
   for _, v in ipairs({ x1, y1, x2, y2, col }) do
     if type(v) ~= "number" then error("line argument is a " .. type(v)) end
   end
+  g.lines[#g.lines + 1] = { col = col, thick = thick or 1 }
 end
 local HIG = dofile(HERE .. "/hig_mock.lua")(ImGui)
 setmetatable(ImGui, { __index = function(_, k)
@@ -923,6 +1009,146 @@ do
 end
 
 ------------------------------------------------------------------------------
+-- The final sweep of Apple's Foundations (decision 0015, 1.5)
+------------------------------------------------------------------------------
+
+do
+  local contrast, GROUND = HIG.contrast, 0x23272EFF
+  local function rgb(col)
+    return math.floor(col / 16777216) % 256, math.floor(col / 65536) % 256, math.floor(col / 256) % 256
+  end
+  local function lum(col) local r, gg, b = rgb(col); return r + gg + b end
+  local function size200() HIG.menuFrame({ frame = function() frame() end }, "Text Size 200%") end
+
+  -- The theme: popups a step lighter, every grey blue-shifted, words 7:1,
+  -- the edges of controls 3:1.
+  P.ext = {}
+  project("noir", "Noir")
+  start()
+  frame()
+  local th = g.theme
+  eq(th.Col_PopupBg, 0x2A2F37FF, "menus and tooltips are a step lighter than the window")
+  ok(lum(th.Col_PopupBg) > lum(th.Col_WindowBg), "lighter, not darker")
+  eq(th.Col_Border, 0x3A404AFF, "with an edge of their own")
+  for name, col in pairs(th) do
+    local r, gg, b = rgb(col)
+    if col ~= 0xFFF200FF then ok(r < gg and gg < b, tostring(name) .. " is a blue-shifted grey (R < G < B)") end
+  end
+  for _, name in ipairs({ "Col_MenuBarBg", "Col_Header", "Col_HeaderHovered", "Col_HeaderActive",
+                          "Col_ResizeGrip", "Col_ScrollbarGrab" }) do
+    ok(th[name], name .. " is the house's, not ImGui's own")
+  end
+  ok(contrast(th.Col_Text, th.Col_PopupBg) >= 7, "a menu's words are 7:1 on it")
+  ok(contrast(th.Col_TextDisabled, th.Col_PopupBg) >= 7, "and so are its keys, which ImGui writes in TextDisabled")
+  for _, name in ipairs({ "Col_MenuBarBg", "Col_HeaderHovered", "Col_HeaderActive" }) do
+    ok(contrast(th.Col_Text, th[name]) >= 7, "words are 7:1 on " .. name)
+  end
+  ok(contrast(th.Col_ScrollbarGrab, th.Col_ScrollbarBg) >= 3, "the scrollbar's thumb is 3:1 on its track")
+  ok(contrast(th.Col_ResizeGrip, th.Col_WindowBg) >= 3, "the resize corner is 3:1 on the window")
+  ok(#g.boxes >= 3, "boxes and sliders drawn: " .. #g.boxes)
+  for _, b in ipairs(g.boxes) do
+    ok(b.size >= 1 and b.edge and contrast(b.edge, GROUND) >= 3 and contrast(b.edge, th.Col_FrameBg) >= 3,
+       "'" .. b.label .. "' has an edge 3:1 on the window and on its own fill")
+  end
+
+  -- Headings bold, the title naming the source, the roll's notes in words,
+  -- the arrows named.
+  ok(#g.headingFonts >= 3, "headings drawn")
+  for i, b in ipairs(g.headingFonts) do ok(b, "heading " .. i .. " is bold") end
+  ok(g.title:find("^Midi Variator — Noir###"), "the title names the source: " .. tostring(g.title))
+  ok(has(g.texts, "the darker notes are the original and the bright ones the variation"),
+     "the roll's notes are told apart in words")
+  ok(has(g.tips, "Previous Variation") and has(g.tips, "Next Variation"), "the arrows say their names")
+  local full
+  for _, l in ipairs(g.checkboxes) do
+    local text = l:match("^(.*)##change")
+    if text then full = full or has(g.tips, text .. "\n") end
+  end
+  ok(full, "a change's tooltip carries its whole line, in case the window cuts it short")
+  eq(g.minW, 400, "the window cannot be made narrower than 400 points")
+
+  -- Nothing runs off the edge at 200%.
+  size200()
+  ok(not g.overflow, "at 200%, nothing runs off the window's edge: " .. tostring(g.overflow))
+  eq(g.minW, 800, "and its least width grows with the text")
+  P.ext = {}
+  project("piano", "Piano")
+  start()
+  frame()
+  size200()
+  ok(has(g.checkboxes, "Chord Changes May Leave the Scale") and not g.overflow,
+     "nor with the chord switches and their box: " .. tostring(g.overflow))
+  P.ext = {}
+  P.reset()
+  local a, b = P.track("Melody"), P.track("Chords")
+  P.selected = { P.item(a, 0, 16, F.twinkle, "Tune"), P.item(b, 0, 16, F.popChords, "Harmony") }
+  start()
+  frame()
+  size200()
+  ok(g.title:find("Tune and 1 more", 1, true), "two items are named in the title: " .. tostring(g.title))
+  ok(not g.overflow, "nor with two items: " .. tostring(g.overflow))
+  click("Make 4 Variations")
+  ok(has(g.buttons, "Put Back the Original") and not g.overflow,
+     "nor with Make, Vary Selected in Place and Put Back the Original in a row: " .. tostring(g.overflow))
+  P.ext = {}
+
+  -- Escape lets go of what it holds before it closes the window.
+  project("noir")
+  start()
+  frame()
+  g.focused = true
+  frame()
+  g.focused = false
+  g.keys = { [ImGui.Key_Escape] = true }
+  frame()
+  g.keys = nil
+  ok(deferred ~= nil, "Escape with the keyboard on a control lets go of it, and the window stays")
+  g.popup = true
+  frame()
+  g.popup = false
+  g.keys = { [ImGui.Key_Escape] = true }
+  frame()
+  g.keys = nil
+  ok(deferred ~= nil, "Escape with a menu open closes the menu, and the window stays")
+  frame()
+  g.keys = { [ImGui.Key_Escape] = true }
+  frame()
+  g.keys = nil
+  ok(deferred == nil, "Escape with nothing held closes the window")
+
+  -- Unticked changes are not thrown away without asking.
+  project("noir", "Noir")
+  start()
+  frame()
+  local box
+  for _, l in ipairs(g.checkboxes) do if l:find("##change", 1, true) then box = box or l end end
+  toggle(box)
+  ok(g.ticked[box] == false, "a change unticked")
+  P.calls.ask, P.answer = nil, 2
+  click("New Set")
+  eq(P.calls.ask, 1, "a new set over unticked changes asks first")
+  eq(P.asked and P.asked.kind, 1, "with OK and Cancel")
+  ok(g.ticked[box] == false, "Cancel keeps the box unticked")
+  click("Use Selected Items")
+  ok(g.ticked[box] == false and P.calls.ask == 2, "reading the item again asks too")
+  g.closeClick = true
+  frame()
+  g.closeClick = false
+  ok(deferred ~= nil and P.calls.ask == 3, "closing the window asks, and Cancel keeps it open")
+  P.answer = 1
+  click("New Set")
+  ok(P.calls.ask == 4 and g.ticked[box] ~= false, "OK lets them go")
+  P.answer = nil
+  click("New Set")
+  eq(P.calls.ask, 4, "with nothing unticked, nothing is asked")
+  g.closeClick = true
+  frame()
+  g.closeClick = false
+  ok(deferred == nil, "and closing just closes")
+  P.ext = {}
+end
+
+------------------------------------------------------------------------------
 -- Every button, from a fresh start, in every state
 ------------------------------------------------------------------------------
 
@@ -976,6 +1202,8 @@ for _, state in ipairs(STATES) do
       ok(okCall, ("%s: clicking '%s' works (%s)"):format(state[1], label, tostring(err)))
       reached[label] = true
       checkInk(state[1] .. " after " .. label)
+      ok(not g.overflow, ("%s after '%s': nothing runs off the window's edge: %s"):format(
+         state[1], label, tostring(g.overflow)))
     end
   end
 end
