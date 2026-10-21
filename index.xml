@@ -73,6 +73,13 @@
         <source file="mv_vary.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/6a62e6c2df86e21942f7ab9cb7fa673948f405c0/reascripts/mv_vary.lua</source>
         <source file="mv_place.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/6a62e6c2df86e21942f7ab9cb7fa673948f405c0/reascripts/mv_place.lua</source>
       </version>
+      <version name="1.5" author="kallums" time="2026-10-21T14:00:00Z">
+        <changelog><![CDATA[A final pass over Apple's design guidelines for Mac apps: menus and tooltips are lighter than the window, every box and slider has an edge you can see before you touch it, rows of buttons and long lines wrap instead of running off the window at large text sizes, and the window won't shrink smaller than its widest row. Changes you untick are no longer thrown away without asking - New Set, Use Selected Items or closing the window ask first. Esc lets go of the keyboard's place before it closes the window. Step headings are bold, the title names your item, a line under the picture says which notes are the original, the < and > arrows say their names, and a long change shows in full when you hover it.]]></changelog>
+        <source main="main" file="Midi Variator.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/dd9f419aace9dc62a0890ec4ef789e3b3c89fce1/reascripts/Midi%20Variator.lua</source>
+        <source file="mv_theory.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/dd9f419aace9dc62a0890ec4ef789e3b3c89fce1/reascripts/mv_theory.lua</source>
+        <source file="mv_vary.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/dd9f419aace9dc62a0890ec4ef789e3b3c89fce1/reascripts/mv_vary.lua</source>
+        <source file="mv_place.lua">https://raw.githubusercontent.com/KallumS/Midi-Variator/dd9f419aace9dc62a0890ec4ef789e3b3c89fce1/reascripts/mv_place.lua</source>
+      </version>
     </reapack>
 
   </category>
