@@ -306,6 +306,21 @@ local api = {
   -- Settings
   GetExtState = function(s, k) return P.ext[s .. ":" .. k] or "" end,
   SetExtState = function(s, k, v, persist) P.ext[s .. ":" .. k] = v end,
+  -- string GetOS(): "Win32", "Win64", "OSX32", "OSX64", "macOS-arm64", or "Other"
+  GetOS = function() return P.os or "macOS-arm64" end,
+
+  -- integer ShowMessageBox(string msg, string title, integer type)
+  -- type 0 OK, 1 OK/Cancel, 2 Abort/Retry/Ignore, 3 Yes/No/Cancel, 4 Yes/No,
+  -- 5 Retry/Cancel; returns 1 OK, 2 Cancel, 3 Abort, 4 Retry, 5 Ignore, 6 Yes, 7 No.
+  -- The test answers with P.answer (OK unless it says otherwise).
+  ShowMessageBox = function(msg, title, kind)
+    if type(msg) ~= "string" or type(title) ~= "string" or math.type(kind) ~= "integer" then
+      error("ShowMessageBox(msg, title, type)")
+    end
+    P.calls.ask = (P.calls.ask or 0) + 1
+    P.asked = { msg = msg, title = title, kind = kind }
+    return P.answer or 1
+  end,
 }
 
 -- REAPER refuses a deleted item, take or track outright - "bad argument #1 to

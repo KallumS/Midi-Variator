@@ -25,3 +25,4 @@ the standing rules; this holds the decisions behind them.
 | [0012](0012-items-that-sound-together-vary-as-one.md) | Items that sound together are varied as one piece |
 | [0013](0013-audition-in-the-originals-place.md) | Audition plays the variation in the original's place, on its own track |
 | [0014](0014-window-text-follows-apples-writing-guidelines.md) | The window's text follows Apple's writing guidelines |
+| [0015](0015-apples-hig-foundations.md) | Apple's HIG Foundations are the standard for the window |
