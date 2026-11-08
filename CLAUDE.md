@@ -158,12 +158,16 @@ ScaleView is a simplified version). `mv_theory` is now the whole of
 `T.nameChord(pitches, key)` returns the symbol, the root's pitch class and the
 bass's.
 
-**Re-copied 10 October 2026** (Suggester's `4577b87`, Pro's `df4ea43`):
-Starting Blocks' chords decide which roots a chord can have. Every variation
-of every fixture at four amounts and 40 seeds - 2,240 - came out note for
-note and word for word as before: the fixtures' chords read the same. A
-chord that is a Blocks chord on another root would now change from that
-root.
+**Re-copied 8 November 2026**: the Blocks dictionary taken on 10 October
+(Suggester's `4577b87`, Pro's `df4ea43`) is gone again, because ScaleView Pro
+reversed it (`f13f8a6`, its decision 0011): Starting Blocks lists only
+complete chords, so a chord played with a note left out lost its root to a
+complete chord with the same notes. `nameChord` is diffed against Pro 1.3.0
+over 427,776 names (every 1-7 note voicing on every bass, plain and with the
+bass or top note doubled, in no key and seven keys), byte-identical. Every
+variation of every fixture at four amounts and 40 seeds - 2,240 - comes out
+note for note as before; the words change in 7, all in `walking`, where Bar 3
+"Cmaj7 became `Gadd11/C`" now reads "Cmaj7 became `Cmaj7sus2`".
 
 **Re-copied 7 October 2026** for two changes made in Pro, and both change what
 the variator does, not only what it prints, because a quality change is
