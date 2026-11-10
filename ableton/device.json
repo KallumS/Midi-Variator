@@ -1,0 +1,30 @@
+{
+  "name": "Midi Variator",
+  "slug": "MidiVariator",
+  "kind": "midi",
+  "template": "midi_effect",
+  "width": 860,
+  "device": {
+    "generator": "midi-variator",
+    "keyless": true
+  },
+  "files": {
+    "midi-variator/mv_theory.lua": "../reascripts/mv_theory.lua",
+    "midi-variator/mv_vary.lua": "../reascripts/mv_vary.lua",
+    "adapters/common.lua": "adapters/common.lua",
+    "adapters/midi_variator.lua": "adapters/midi_variator.lua",
+    "adapters/index.lua": {
+      "text": "return { \"adapters/midi_variator.lua\" }\n"
+    }
+  },
+  "scripts": [
+    "kit/runtime/polyfill.js",
+    "kit/runtime/lua_parse.js",
+    "kit/runtime/lua_runtime.js",
+    "kit/runtime/lua_compile.js",
+    "kit/runtime/host.js",
+    "kit/ui.js",
+    "kit/live.js",
+    "kit/generator.js"
+  ]
+}

@@ -13,4 +13,13 @@ for suite in tests/test_vary.lua tests/test_place.lua tests/test_ui.lua; do
   printf '%-26s ' "$(basename "$suite")"
   if ! $RUN "$suite"; then fail=1; fi
 done
+if command -v node >/dev/null 2>&1; then
+  printf '%-22s ' "ableton device"
+  if python3 ableton/kit/build.py --check ableton/device.json && node --test ableton/tests/test_device.js >/tmp/ableton_test.out 2>&1; then
+    echo "ok"
+  else
+    tail -20 /tmp/ableton_test.out; fail=1
+  fi
+fi
+
 exit $fail

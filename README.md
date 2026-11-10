@@ -15,6 +15,8 @@ drift off, because none of them is made from the one before it. The
 original is kept inside every variation, so you can always vary it again or
 put it back.
 
+**In Ableton Live:** `ableton/` has Midi Variator as a Max for Live MIDI effect. See [`ableton/README.md`](ableton/README.md).
+
 ## Installing
 
 **1. Install ReaImGui.** The script will not start without it.
