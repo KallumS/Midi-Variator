@@ -7,8 +7,10 @@
  * @block once and @sample once per sample frame. MIDI arrives through
  * midirecv() and leaves through midisend() with its sample offset.
  *
- * @gfx is not run: Middaw draws each device's controls itself from the
- * sliders, so a device looks like the rest of the app (see family/devices.js).
+ * @gfx is not run by default: Middaw draws each device's controls itself from
+ * the sliders, so a device looks like the rest of the app. With
+ * `{ gfx: true }` it is compiled too, and `runGfx(host, ...)` runs it: every
+ * gfx_* call goes to the host, which draws (the Ableton devices' [v8ui]).
  *
  * Everything in EEL2 is a double. Variables live in one Float64Array, so the
  * generated code reads `v[12]`; memory (`buf[i]`) is EEL2's 8M words, given
@@ -376,6 +378,7 @@
     this.funcCode = [];
     this.strConsts = [];
     this.temps = 0;
+    this.gfx = false;              // compile gfx_* calls for a host to draw
   }
   Compiler.prototype.slot = function (name) {
     var s = this.slots[name];
@@ -643,7 +646,16 @@
       var base = name.slice(name.lastIndexOf('.') + 1), prefix = name.slice(0, name.lastIndexOf('.'));
       if (this.funcs[base]) return this.userCall(this.funcs[base], args, ctx, prefix === 'this' || prefix.indexOf('this.') === 0 ? resolveThis(prefix, ctx) : prefix);
     }
-    if (/^gfx_|^mouse_/.test(name)) return '(' + (args.length ? all() + ', ' : '') + '0)';
+    if (/^gfx_|^mouse_/.test(name)) {
+      if (!this.gfx) return '(' + (args.length ? all() + ', ' : '') + '0)';
+      // Width and height come back through the arguments, as file_riff's do.
+      if (name === 'gfx_measurestr' || name === 'gfx_measurechar' || name === 'gfx_getimgdim') {
+        var mw = this.lvalue(args[1] || { k: 'num', v: 0 }, ctx), mh = this.lvalue(args[2] || { k: 'num', v: 0 }, ctx);
+        var tg = this.temp();
+        return '(' + tg + ' = S.call(' + JSON.stringify(name) + ', ' + A(0) + ')' + (mw ? ', ' + mw + ' = S.gm[0]' : '') +
+               (mh ? ', ' + mh + ' = S.gm[1]' : '') + ', ' + tg + ')';
+      }
+    }
     return 'S.call(' + JSON.stringify(name) + (args.length ? ', ' + all() : '') + ')';
   };
 
@@ -754,6 +766,7 @@
     this.slots = { __count: 0 };
     var self = this;
     var C = new Compiler(this.slots);
+    C.gfx = !!opts.gfx;
     // Predeclare what the host reads and writes.
     ['srate', 'samplesblock', 'tempo', 'play_state', 'play_position', 'beat_position', 'ts_num', 'ts_denom',
      'num_ch', 'trigger', 'pdc_delay', 'pdc_bot_ch', 'pdc_top_ch', 'pdc_midi', 'ext_noinit', 'ext_nodenorm',
@@ -761,16 +774,18 @@
     for (var c = 0; c < 64; c++) C.slot('spl' + c);
     for (var s = 1; s <= 64; s++) C.slot('slider' + s);
     this.file.sliders.forEach(function (sl) { C.slot(sl.variable); });
+    if (C.gfx) ['gfx_r', 'gfx_g', 'gfx_b', 'gfx_a', 'gfx_a2', 'gfx_x', 'gfx_y', 'gfx_w', 'gfx_h', 'gfx_texth', 'gfx_mode', 'gfx_clear',
+                'gfx_dest', 'gfx_ext_flags', 'mouse_x', 'mouse_y', 'mouse_cap', 'mouse_wheel', 'mouse_hwheel'].forEach(function (n) { C.slot(n); });
 
     var sections = {};
-    ['init', 'slider', 'block', 'sample', 'serialize'].forEach(function (name) {
+    ['init', 'slider', 'block', 'sample', 'serialize'].concat(C.gfx ? ['gfx'] : []).forEach(function (name) {
       var parts = self.file.sections[name];
       if (!parts.length) return;
       sections[name] = parts.map(function (part) { return C.compileSection(part.code, part.line); });
     });
     // @gfx is parsed for its functions only, so @init code that calls a
     // helper defined there still compiles.
-    this.file.sections.gfx.forEach(function (part) {
+    if (!C.gfx) this.file.sections.gfx.forEach(function (part) {
       try { parse(lex(part.code, part.line), C.funcs); } catch (e) { /* the window is not run */ }
     });
 
@@ -956,8 +971,27 @@
     this.riff = f ? [f.channels, f.rate] : [0, 0];
     return f ? 1 : 0;
   };
+  // One frame of @gfx, drawn by `host`: an object with a method per gfx_*
+  // function (each called with the JSFX first), as the Ableton devices give.
+  // `w`, `h` and `mouse` ({x, y, cap, wheel, hwheel}) are what REAPER sets.
+  JSFX.prototype.runGfx = function (host, w, h, mouse) {
+    if (!this.sec_gfx) return 0;
+    if (!this.initialised) this.init();
+    var v = this.v, s = this.slots;
+    this.gfxHost = host;
+    v[s.gfx_w] = w; v[s.gfx_h] = h;
+    if (mouse) {
+      v[s.mouse_x] = mouse.x; v[s.mouse_y] = mouse.y; v[s.mouse_cap] = mouse.cap;
+      if (mouse.wheel) v[s.mouse_wheel] += mouse.wheel;
+      if (mouse.hwheel) v[s.mouse_hwheel] += mouse.hwheel;
+    }
+    return this.runSection('gfx');
+  };
+  JSFX.prototype.gm = [0, 0];
+
   JSFX.prototype.call = function (name) {
     var a = Array.prototype.slice.call(arguments, 1);
+    if (this.gfxHost && this.gfxHost[name]) return +this.gfxHost[name].apply(this.gfxHost, [this].concat(a)) || 0;
     var f = BUILTINS[name];
     if (!f) {
       if (!this.warned) this.warned = {};
@@ -1002,6 +1036,7 @@
   // (Panic, Transfer to Pads...) are pressed from Middaw's controls.
   JSFX.prototype.eval = function (code) {
     var C = new Compiler(this.slots);
+    C.gfx = !!opts.gfx;
     C.strConsts = this.strConsts;
     // reuse the instance's functions by recompiling them into this snippet
     var funcs = {};

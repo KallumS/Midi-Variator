@@ -88,7 +88,7 @@ function load(bundlePath, opts) {
   const set = opts.set || liveSet(opts.live);
   const ops = [], out = [], posted = [];
   let clicks = [];
-  const mg = {
+  const mg = opts.graphics || {
     init() {}, redraw() { this.dirty = true; },
     select_font_face() {}, set_font_size(s) { this.fs = s; }, text_measure(s) { return [String(s).length * (this.fs || 10) * 0.55, this.fs || 10]; },
     set_source_rgba() {}, rectangle(x, y, w, h) { this.last = [x, y, w, h]; }, rectangle_rounded(x, y, w, h) { this.last = [x, y, w, h]; },
@@ -115,13 +115,49 @@ function load(bundlePath, opts) {
     constructor(fn) { this.fn = fn; this.on = false; tasks.push(this); }
     repeat() { this.on = true; } cancel() { this.on = false; }
   }
+  const buffers = opts.buffers || {};
+  // buffers[name]: a Float64Array (one channel), or { chans: [Float64Array], rate } for a sound
+  class Buffer {
+    constructor(name) {
+      this.name = name;
+      if (!buffers[name]) buffers[name] = new Float64Array(1024);
+    }
+    get b() { return buffers[this.name]; }
+    chan(ch) { const b = this.b; return b.chans ? b.chans[ch - 1] : b; }
+    poke(ch, frame, values) {
+      values = [].concat(values);
+      let d = this.chan(ch);
+      if (!this.b.chans && frame + values.length > d.length) {
+        const n = new Float64Array(Math.max(frame + values.length, d.length * 2)); n.set(d); buffers[this.name] = d = n;
+      }
+      values.forEach((v, i) => { d[frame + i] = v; });
+    }
+    peek(ch, frame, n) { return Array.from(this.chan(ch).slice(frame, frame + (n || 1))); }
+    framecount() { return this.chan(1).length; }
+    channelcount() { return this.b.chans ? this.b.chans.length : 1; }
+    length() { return this.framecount() / ((this.b.rate || 48000) / 1000); }
+  }
+  // Max's File, on a map of path -> text
+  const disk = opts.disk || {};
+  class File {
+    constructor(path, mode) {
+      this.path = path; this.mode = mode || 'read';
+      if (this.mode === 'read' && disk[path] === undefined) { this.isopen = false; return; }
+      this.isopen = true; this.text = this.mode === 'read' ? disk[path] : ''; this.position = 0;
+    }
+    get eof() { return this.text.length; }
+    set eof(n) { this.text = this.text.slice(0, n); }
+    readstring(n) { const s = this.text.slice(this.position, this.position + n); this.position += s.length; return s; }
+    writestring(s) { this.text += s; this.position = this.text.length; }
+    close() { if (this.mode !== 'read') disk[this.path] = this.text; this.isopen = false; }
+  }
   let now = 0;
   const realDate = Date;
   const FakeDate = function () { return new realDate(now); };
   FakeDate.now = () => now;
   const ctx = {
-    mgraphics: mg, LiveAPI, Task, Date: FakeDate,
-    box: { rect: [0, 0, opts.width || 860, 169] },
+    mgraphics: mg, LiveAPI, Task, Buffer, File, Date: FakeDate, patcher: { filepath: opts.filepath || '/Live/User Library/Device.amxd' }, max: { getcolor: () => [0.2, 0.2, 0.2, 1] },
+    box: { rect: [0, 0, opts.width || 860, opts.height || 169] },
     outlet: (...a) => out.push(a), post: (s) => posted.push(String(s)),
     console, Math, JSON
   };
@@ -130,7 +166,7 @@ function load(bundlePath, opts) {
   vm.runInContext(fs.readFileSync(bundlePath, 'utf8'), ctx, { filename: bundlePath });
 
   const api = {
-    ctx, set, out, posted, ops,
+    ctx, set, out, posted, ops, buffers, disk,
     paint() { ops.length = 0; ctx.paint(); return ops.slice(); },
     texts() { return api.paint().map((o) => o.text); },
     // Click the control whose words are `label` (the nth match).

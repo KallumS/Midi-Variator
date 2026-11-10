@@ -3931,8 +3931,13 @@ function paint() {
   }
   if (GEN.input === 'selection') UI.button('Use Clip', KEY_X, DEVICE.keyless ? ROW_Y[0] + 13 : ROW_Y[3] + 13, KEY_W, 18, !!S.selection, useClip);
 
+  // A block read as notation (DEVICE.notation): Starting Blocks Notation's
+  // engraving of the chosen result, at the right.
+  var noteW = DEVICE.notation ? 380 : 0;
+  if (noteW) drawScore(W - noteW, 18, noteW - 6, Ht - 22);
+
   // The engine's settings, four rows to a column.
-  var resX = W - 296, cols = Math.max(1, Math.floor((resX - SET_X) / (CELL_W + CELL_GAP))), per = cols * 4;
+  var resX = W - 296 - noteW, cols = Math.max(1, Math.floor((resX - SET_X) / (CELL_W + CELL_GAP))), per = cols * 4;
   var pages = Math.max(1, Math.ceil(S.settings.length / per));
   if (S.page >= pages) S.page = 0;
   var shown = S.settings.slice(S.page * per, (S.page + 1) * per);
@@ -3967,6 +3972,60 @@ function paint() {
   UI.button(player.playing() ? 'Stop' : 'Play', lx + 80, by, 46, 18, player.playing(), play, has);
   UI.button('Insert', lx + 130, by, 56, 18, false, insert, has);
   UI.button(TARGETS[S.target], lx + 190, by, 100, 18, false, function () { S.target = (S.target + 1) % TARGETS.length; save(); mgraphics.redraw(); });
+}
+
+// --------------------------------------------------------------- score --
+var score = { key: null, ops: null, height: 0 };
+function engraving() {
+  var r = S.results[S.chosen];
+  if (!r) return null;
+  var k = JSON.stringify([S.chosen, r.title, r.beats, S.key, r.parts[0] && r.parts[0].notes.length]);
+  if (score.key === k) return score;
+  try {
+    var e = call('engrave', { key: S.key, barBeats: S.song.num * 4 / S.song.den, meter: [S.song.num, S.song.den], width: 360,
+                              notes: chosenNotes().all, beats: r.beats || 4, name: '', drums: false, space: 6 });
+    score = { key: k, ops: e.ops, height: e.height };
+  } catch (err) { score = { key: k, ops: [], height: 0, error: String(err.message || err) }; }
+  return score;
+}
+// The pen's colours: 1 ink, 2 staff, 3 ground, 4 accent, in the house palette.
+function penColour(c) { return c === 2 ? UI.C.dim : c === 3 ? UI.C.sunken : c === 4 ? UI.C.accent : UI.C.text; }
+// How wide the engraving really is, so a short block is drawn large.
+function scoreWidth(ops) {
+  var m = 1;
+  ops.forEach(function (op) {
+    if (op[0] === 'line') m = Math.max(m, op[1], op[3]);
+    else if (op[0] === 'poly') for (var i = 0; i < op[1].length; i += 2) m = Math.max(m, op[1][i]);
+    else m = Math.max(m, op[1]);
+  });
+  return m;
+}
+function drawScore(x, y, w, h) {
+  var g = mgraphics, sc = engraving();
+  UI.rect(x, y, w, h, UI.C.sunken);
+  if (!sc || !sc.ops || !sc.ops.length) return;
+  var z = Math.min(2, (h - 8) / Math.max(1, sc.height), (w - 16) / scoreWidth(sc.ops));
+  var ox = x + 4, oy = y + 4 + Math.max(0, (h - 8 - sc.height * z) / 2);
+  sc.ops.forEach(function (op) {
+    var col = penColour(op[op[0] === 'line' ? 5 : op[0] === 'poly' ? 2 : op[0] === 'circle' ? 4 : 3]);
+    g.set_source_rgba(col[0], col[1], col[2], col[3]);
+    if (op[0] === 'line') {
+      g.set_line_width(Math.max(0.5, op[6] * z));
+      g.move_to(ox + op[1] * z, oy + op[2] * z); g.line_to(ox + op[3] * z, oy + op[4] * z); g.stroke();
+    } else if (op[0] === 'poly') {
+      var p = op[1];
+      g.move_to(ox + p[0] * z, oy + p[1] * z);
+      for (var i = 2; i + 1 < p.length; i += 2) g.line_to(ox + p[i] * z, oy + p[i + 1] * z);
+      g.close_path(); g.fill();
+    } else if (op[0] === 'circle') {
+      g.arc(ox + op[1] * z, oy + op[2] * z, op[3] * z, 0, Math.PI * 2);
+      if (op[5]) g.fill(); else { g.set_line_width(1); g.stroke(); }
+    } else if (op[0] === 'text') {
+      g.select_font_face('Arial', 'normal', 'normal'); g.set_font_size(Math.max(6, op[5] * z));
+      var tw = op[6] ? g.text_measure(op[4])[0] : 0;
+      g.move_to(ox + op[1] * z - tw / 2, oy + op[2] * z); g.show_text(op[4]);
+    }
+  });
 }
 
 function onclick(x, y) { if (UI.click(x, y)) mgraphics.redraw(); }

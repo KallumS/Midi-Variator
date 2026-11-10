@@ -28,7 +28,7 @@ module.exports = function (o) {
       set = liveSet(opts.live);
       if (o.selection) set.open(set.clip(8, TUNE));
     }
-    const d = load(o.bundle, { set });
+    const d = load(o.bundle, { set, width: o.width });
     d.send('bang');
     if (o.selection && !opts.noClip) d.click('Use Clip');
     if (o.beside && !opts.keepTarget) d.click('New Track');   // the shared tests start from New Clip
