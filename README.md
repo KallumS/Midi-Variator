@@ -17,6 +17,8 @@ put it back.
 
 **In Ableton Live:** `ableton/` has Midi Variator as a Max for Live MIDI effect. See [`ableton/README.md`](ableton/README.md).
 
+![Midi Variator in Ableton Live](ableton/window.png)
+
 ## Installing
 
 **1. Install ReaImGui.** The script will not start without it.

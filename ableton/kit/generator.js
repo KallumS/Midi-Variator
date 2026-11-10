@@ -282,14 +282,17 @@ function paint() {
     var col = Math.floor(i / 4), row = i % 4;
     UI.stepper(s.label, s.names, s.index, SET_X + col * (CELL_W + CELL_GAP), ROW_Y[row], CELL_W, function (k) { setSetting(s.id, k); });
   });
-  if (pages > 1) {
-    UI.button('More Settings', SET_X, Ht - 22, 100, 18, false, function () { S.page = (S.page + 1) % pages; mgraphics.redraw(); });
-    UI.text((S.page + 1) + ' of ' + pages, SET_X + 106, Ht - 22, 60, 18, UI.C.dim, 9, 0);
+  // More than a page of settings: the next page from the foot of the key
+  // column, which is free (Use Clip sits at its top when there is no key).
+  if (pages > 1 && !(GEN.input === 'selection' && !DEVICE.keyless)) {
+    UI.button('More Settings', KEY_X, ROW_Y[3] + 13, KEY_W, 18, false, function () { S.page = (S.page + 1) % pages; mgraphics.redraw(); });
+    UI.text('Page ' + (S.page + 1) + ' of ' + pages, KEY_X, ROW_Y[3] + 32, KEY_W, 14, UI.C.dim, 9, 1);
   }
 
   // The results: click one to hear it.
-  var lx = resX, lw = 290, ly = 20, rowH = 15, rows = 8;
-  UI.rect(lx, ly, lw, rows * rowH + 2, UI.C.sunken);
+  // Eight rows, or seven and the arrows in the eighth's place when there are more.
+  var lx = resX, lw = 290, ly = 20, rowH = 15, rows = S.results.length > 8 ? 7 : 8;
+  UI.rect(lx, ly, lw, 8 * rowH + 2, UI.C.sunken);
   if (S.chosen < S.scroll) S.scroll = S.chosen;
   if (S.chosen >= S.scroll + rows) S.scroll = S.chosen - rows + 1;
   for (var i = 0; i < rows && S.scroll + i < S.results.length; i++) {
@@ -300,8 +303,8 @@ function paint() {
     (function (index) { UI.hit(lx, y, lw, rowH, { click: function () { choose(index); } }); })(k);
   }
   if (S.results.length > rows) {
-    UI.button('↑', lx + lw - 38, ly + rows * rowH + 4, 18, 14, false, function () { S.chosen = Math.max(0, S.chosen - 1); mgraphics.redraw(); });
-    UI.button('↓', lx + lw - 18, ly + rows * rowH + 4, 18, 14, false, function () { S.chosen = Math.min(S.results.length - 1, S.chosen + 1); mgraphics.redraw(); });
+    UI.button('↑', lx + lw - 38, ly + rows * rowH + 2, 18, 13, false, function () { S.chosen = Math.max(0, S.chosen - 1); mgraphics.redraw(); });
+    UI.button('↓', lx + lw - 18, ly + rows * rowH + 2, 18, 13, false, function () { S.chosen = Math.min(S.results.length - 1, S.chosen + 1); mgraphics.redraw(); });
   }
 
   var by = Ht - 22, has = S.results.length > 0;

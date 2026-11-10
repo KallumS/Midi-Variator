@@ -1,6 +1,21 @@
 /* mgraphics drawn to SVG, to look at what a device draws without Max.
  *   const svg = require('./svg.js'); const g = svg.graphics(w, h); ... g.svg() */
 'use strict';
+// Arial's advance widths in thousandths of an em, so a picture measures text
+// as Max will (a flat guess put Midular's footer over its own status).
+const ARIAL = { ' ': 278, a: 556, b: 556, c: 500, d: 556, e: 556, f: 278, g: 556, h: 556, i: 222, j: 222, k: 500, l: 222,
+  m: 833, n: 556, o: 556, p: 556, q: 556, r: 333, s: 500, t: 278, u: 556, v: 500, w: 722, x: 500, y: 500, z: 500,
+  A: 667, B: 667, C: 722, D: 722, E: 667, F: 611, G: 778, H: 722, I: 278, J: 500, K: 667, L: 556, M: 833, N: 722,
+  O: 778, P: 667, Q: 778, R: 722, S: 667, T: 611, U: 722, V: 667, W: 944, X: 667, Y: 667, Z: 611,
+  '.': 278, ',': 278, ':': 278, ';': 278, '-': 333, '(': 333, ')': 333, '/': 278, '%': 889, '\u00B7': 278, '\u2014': 1000,
+  '\u2013': 556, "'": 191, '\u2019': 222, '\u201C': 333, '\u201D': 333, '"': 355, '!': 278, '?': 556, '#': 556, '+': 584,
+  '=': 584, '<': 584, '>': 584, '\u00D7': 584, '\u2026': 1000, '\u2039': 333, '\u203A': 333, '[': 278, ']': 278, '&': 667 };
+function width(s, font) {
+  let t = 0;
+  for (const ch of s) t += ARIAL[ch] !== undefined ? ARIAL[ch] : (/[0-9]/.test(ch) ? 556 : 600);
+  return t / 1000 * font.size * (font.weight === 'bold' ? 1.06 : 1);
+}
+
 function graphics(w, h) {
   const out = [], path = [];
   let rgba = [0, 0, 0, 1], lw = 1, font = { name: 'Arial', slant: 'normal', weight: 'normal', size: 10 }, at = [0, 0];
@@ -12,7 +27,7 @@ function graphics(w, h) {
     set_line_width(x) { lw = x; },
     select_font_face(name, slant, weight) { font = Object.assign({}, font, { name, slant: slant || 'normal', weight: weight || 'normal' }); },
     set_font_size(s) { font.size = s; },
-    text_measure(s) { return [String(s).length * font.size * 0.55, font.size * 1.2]; },
+    text_measure(s) { return [width(String(s), font), font.size * 1.2]; },
     move_to(x, y) { at = [x, y]; path.push('M' + x + ' ' + y); },
     line_to(x, y) { at = [x, y]; path.push('L' + x + ' ' + y); },
     close_path() { path.push('Z'); },
@@ -41,10 +56,11 @@ function graphics(w, h) {
 }
 
 // An SVG to a PNG, through the pre-installed Chromium (playwright).
-async function png(svgText, file, w, h) {
+// `scale` 2 draws it as a Retina screen would, for a picture people will look at.
+async function png(svgText, file, w, h, scale) {
   const { chromium } = require('playwright');
   const b = await chromium.launch();
-  const p = await b.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
+  const p = await b.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: scale || 1 });
   await p.setContent('<body style="margin:0">' + svgText + '</body>');
   await p.screenshot({ path: file });
   await b.close();

@@ -16,6 +16,8 @@ the add-on): the device runs on Max 9's JavaScript engine (`[v8ui]`).
 
 ## Using it
 
+![Midi Variator in Live, drawn by the device's own code on a stand-in for Max](window.png)
+
 | | |
 | --- | --- |
 | **Use Clip** | Takes the clip open in Detail View: its selected notes if any are selected (from the bar they start in), otherwise every note in its loop. The key is heard in the music, so there is no key to set. On a track with a Drum Rack the clip is varied as drums. |
@@ -33,7 +35,7 @@ The settings and the key are saved with the Live set.
 ableton/device.json` writes the `.amxd`, the `.maxpat` and the script bundle
 `MidiVariator.js`. The bundle is Middaw's Lua 5.4 runtime, the engine, the Noterator adapter (`ableton/adapters/`) and the shared window (`ableton/kit/generator.js`). See `ableton/kit/VENDORED.md`.
 
-`node --test ableton/tests/test_device.js` runs the device on a pretend Max and a pretend Live set: every setting stepped through, hearing a result (every note started is stopped), each way of inserting, a full track refused, and saving and restoring with the set. Its own tests check the key heard in the clip, selected notes taken from their bar, and a Drum Rack's clip varied as drums.
+`node --test ableton/tests/test_device.js` runs the device on a pretend Max and a pretend Live set: every setting stepped through, hearing a result (every note started is stopped), each way of inserting, a full track refused, and saving and restoring with the set. Its own tests check the key heard in the clip, selected notes taken from their bar, and a Drum Rack's clip varied as drums. `node ableton/window.js` redraws the picture above from the device's own drawing code (it needs Playwright's Chromium).
 
 ## Limits
 

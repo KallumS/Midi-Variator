@@ -436,3 +436,15 @@ quality: all five of its rules (bass stays, scale, clash, repeated chords,
 top kept) were broken on purpose and each failed the suite. 1.3: every
 rule of each new feature was broken with `tools/bite.sh`; the misses each
 became a test (see the session log of 2026-10-07).
+
+## The Ableton device (branch `ableton`)
+
+`ableton/` is Midi Variator as a Max for Live MIDI effect, for Live 12.1 or later (it runs on Max 9's JavaScript, in a `[v8ui]`). It is on this branch only: `ableton` is `main` with the device added, so REAPER work goes on `main` and is merged in (`git merge main`). `ableton/README.md` is the musician's guide to it.
+
+- **Build**: `python3 ableton/kit/build.py ableton/device.json` writes the `.amxd`, the `.maxpat` and the bundle `MidiVariator.js`; with `--check` it fails if they are stale. Rebuild after any change to the code it carries, the kit or `device.json`, and commit what it writes: the user copies those files straight into Live.
+- **Test**: `node --test ableton/tests/test_device.js`, on a pretend Max and a pretend Live set (`ableton/kit/test/max.js`) - `tools/test.sh` runs it, and the stale-build check.
+- **Picture**: `node ableton/window.js` redraws `ableton/window.png` (variations of a two-bar tune), the picture in both READMEs, from the device's own drawing code on that pretend Max; it needs Playwright's Chromium. Redraw it after any change to what the device shows, and look at it.
+- **The kit is shared.** `ableton/kit/` is the same in all eighteen family repositories with a device: change it in one, copy it to all, rebuild and test each. `ableton/kit/runtime/` is Middaw's `runtime/`, copied unchanged - fix Middaw, then copy. `ableton/kit/VENDORED.md` has the commits.
+- **Not yet opened in Live.** Everything is tested against stand-ins for Max and the Live Object Model; say so rather than claim it works in Live.
+- **The engine runs unchanged** on Middaw's Lua, spoken to through Noterator's adapter in `ableton/adapters/` (a copy: a change goes to Noterator first). A change to the engine reaches the device at the next build, and the device's tests run it.
+- `ableton/kit/generator.js` is the window, shared by the six generator devices (Starting Blocks, its notation fork, Good Idea, Midi Variator, Midi Suggester, Midi Catalogue). `device.json` sets what differs: which settings show, keyless, notation, a part per track.

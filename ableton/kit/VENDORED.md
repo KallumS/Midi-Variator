@@ -23,6 +23,6 @@ Do not edit `runtime/`: fix Middaw, then copy. The adapters beside the kit
 - `jsfx_device.js` is a whole device for a family JSFX: for a MIDI effect, the plug-in on a clock, its window, its state; for an audio one, its window driving gen~.
 - `jsfx2gen.js` translates a JSFX's DSP to gen~ code (GenExpr) on the runtime's parser and rules.
 - `lua_device.js` runs a ReaScript that draws with gfx, with REAPER's gfx and reaper tables supplied.
-- `test/genexpr.js` runs that gen~ code as JavaScript; `test/gen_compare.js` holds it to the runtime sample for sample; `test/svg.js` and `test/shot.js` draw a device to a PNG.
+- `test/genexpr.js` runs that gen~ code as JavaScript; `test/gen_compare.js` holds it to the runtime sample for sample; `test/svg.js` and `test/shot.js` draw a device to a PNG; `test/picture.js` draws the README's picture from the scene in `ableton/window.js`.
 - `build.py` writes the bundle, the `.maxpat` and the `.amxd`.
 - `test/max.js` is a pretend Max and a pretend Live set, for `node --test`.
