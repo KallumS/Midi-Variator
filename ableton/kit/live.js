@@ -173,6 +173,20 @@ var Live = (function () {
     });
   }
 
+  // New notes on a new MIDI track beside this one, in the selected scene:
+  // a suggestion goes with the music it was made for, not over it.
+  function newTrackClip(notes, beats, name, more) {
+    var track = thisTrack();
+    if (!track) return { ok: false, message: 'This device needs to be on a MIDI track.' };
+    var scene = selectedScene();
+    return undoable(function () {
+      var parts = [{ name: name, notes: notes }].concat(more || []);
+      newTracks(track, parts, function (t) { show(clipInSlot(api(t.unquotedpath + ' clip_slots ' + scene), this.notes, beats, this.name)); });
+      return { ok: true, message: parts.length === 1 ? 'Added a track beside this one, with the clip in scene ' + (scene + 1) + '.'
+                                                     : 'Added ' + parts.length + ' tracks beside this one, with the clips in scene ' + (scene + 1) + '.' };
+    });
+  }
+
   // Each further part on a new MIDI track, in order, after this one.
   function newTracks(track, more, put) {
     if (!more || !more.length) return '';
@@ -265,6 +279,6 @@ var Live = (function () {
     this.onEnd = null;
   };
 
-  return { song: song, clipNotes: clipNotes, newClip: newClip, replaceInClip: replaceInClip,
+  return { song: song, clipNotes: clipNotes, newClip: newClip, newTrackClip: newTrackClip, replaceInClip: replaceInClip,
            arrangementClip: arrangementClip, drumTrack: drumTrack, Player: Player, ROOTS: ROOTS, SCALE_NAMES: SCALE_NAMES };
 })();

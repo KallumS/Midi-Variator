@@ -3549,6 +3549,20 @@ var Live = (function () {
     });
   }
 
+  // New notes on a new MIDI track beside this one, in the selected scene:
+  // a suggestion goes with the music it was made for, not over it.
+  function newTrackClip(notes, beats, name, more) {
+    var track = thisTrack();
+    if (!track) return { ok: false, message: 'This device needs to be on a MIDI track.' };
+    var scene = selectedScene();
+    return undoable(function () {
+      var parts = [{ name: name, notes: notes }].concat(more || []);
+      newTracks(track, parts, function (t) { show(clipInSlot(api(t.unquotedpath + ' clip_slots ' + scene), this.notes, beats, this.name)); });
+      return { ok: true, message: parts.length === 1 ? 'Added a track beside this one, with the clip in scene ' + (scene + 1) + '.'
+                                                     : 'Added ' + parts.length + ' tracks beside this one, with the clips in scene ' + (scene + 1) + '.' };
+    });
+  }
+
   // Each further part on a new MIDI track, in order, after this one.
   function newTracks(track, more, put) {
     if (!more || !more.length) return '';
@@ -3641,7 +3655,7 @@ var Live = (function () {
     this.onEnd = null;
   };
 
-  return { song: song, clipNotes: clipNotes, newClip: newClip, replaceInClip: replaceInClip,
+  return { song: song, clipNotes: clipNotes, newClip: newClip, newTrackClip: newTrackClip, replaceInClip: replaceInClip,
            arrangementClip: arrangementClip, drumTrack: drumTrack, Player: Player, ROOTS: ROOTS, SCALE_NAMES: SCALE_NAMES };
 })();
 
@@ -3680,10 +3694,12 @@ var S = {
   session: call('newSession', { generator: DEVICE.generator }),
   key: { root: 1, scale: 1 }, follow: true, seed: 1, target: 0,
   song: { tempo: 120, num: 4, den: 4 },
-  settings: [], results: [], chosen: 0, part: 0, page: 0, scroll: 0,
+  settings: [], results: [], chosen: 0, part: 0, inst: 'pno', page: 0, scroll: 0,
   selection: null, status: '', warn: false, ready: false, pending: null
 };
-var TARGETS = ['New Clip', 'Arrangement', 'This Clip'];
+// Where Insert puts a result. A suggestion (DEVICE.beside) goes with the
+// music it was made for, so its first choice is a track of its own.
+var TARGETS = DEVICE.beside ? ['New Track', 'New Clip', 'Arrangement', 'This Clip'] : ['New Clip', 'Arrangement', 'This Clip'];
 var player = new Live.Player(function (bytes) { for (var i = 0; i < bytes.length; i++) outlet(0, bytes[i]); });
 
 function say(msg, warn) { S.status = msg || ''; S.warn = !!warn; }
@@ -3691,7 +3707,7 @@ function say(msg, warn) { S.status = msg || ''; S.warn = !!warn; }
 function context() {
   var sel = S.selection || { notes: [], beats: 0, drums: false };
   return { root: S.key.root, scale: S.key.scale, num: S.song.num, den: S.song.den,
-           barBeats: S.song.num * 4 / S.song.den, bpm: S.song.tempo, inst: 'pno', catalogueId: 'pno', bars: 4,
+           barBeats: S.song.num * 4 / S.song.den, bpm: S.song.tempo, inst: S.inst, catalogueId: S.inst, bars: 4,
            selection: { notes: sel.notes, beats: sel.beats, drums: !!sel.drums } };
 }
 
@@ -3705,8 +3721,17 @@ function partNames() {
 // The device's Key and Scale are the engine's key; an engine that also lists
 // its own is not shown it twice.
 var OWN_KEY = { root: 1, scale: 1, key: 1 };
+// An engine written for one instrument (DEVICE.instrument) is told which:
+// Midi Catalogue's orchestra, chosen on the device, as Noterator's part is.
+var EXTRA = { asax: 1, tsax: 1, bsax: 1, vib: 1, sop: 1, alto: 1, ten: 1, bass: 1, gtr: 1, ebass: 1, ubass: 1, synth: 1, kit: 1 };
+var INSTRUMENTS = DEVICE.instrument ? call('instruments').filter(function (i) { return !EXTRA[i.id]; }) : [];
 function refreshSettings() {
   S.settings = call('settings', { session: S.session, context: context() }).filter(function (s) { return !OWN_KEY[s.id]; });
+  if (INSTRUMENTS.length) {
+    var at = 0;
+    INSTRUMENTS.forEach(function (x, i) { if (x.id === S.inst) at = i; });
+    S.settings.unshift({ id: '$inst', label: 'Instrument', names: INSTRUMENTS.map(function (x) { return x.name; }), index: at + 1, hint: '' });
+  }
   var parts = partNames();
   if (parts) {
     if (S.part >= parts.length) S.part = 0;
@@ -3736,7 +3761,7 @@ function generate() {
 
 function save() {
   outlet(1, 'set', JSON.stringify({ v: 1, st: call('snapshot', { session: S.session }), key: S.key,
-                                    follow: S.follow, seed: S.seed, target: S.target, part: S.part }));
+                                    follow: S.follow, seed: S.seed, target: S.target, part: S.part, inst: S.inst }));
 }
 
 function useKey() { call('useKey', { session: S.session, key: S.key }); }
@@ -3783,12 +3808,14 @@ function apply(st) {
   S.seed = st.seed || 1;
   S.target = st.target || 0;
   S.part = st.part || 0;
+  if (st.inst) S.inst = st.inst;
   useKey();
 }
 
 // ------------------------------------------------------------- actions --
 function setSetting(id, index) {
   if (id === '$part') { S.part = index - 1; refreshSettings(); save(); mgraphics.redraw(); return; }
+  if (id === '$inst') { S.inst = INSTRUMENTS[index - 1].id; say(''); generate(); save(); mgraphics.redraw(); return; }
   call('set', { session: S.session, setting: id, index: index, context: context() });
   say('');
   generate();
@@ -3833,8 +3860,13 @@ function play() {
   var c = chosenNotes();
   if (!c) return;
   readSong();
-  player.play(c.all, S.song.tempo, function () { mgraphics.redraw(); });
+  player.play(heard(c), S.song.tempo, function () { mgraphics.redraw(); });
   mgraphics.redraw();
+}
+// What Play sounds: the result, and for a suggestion the music it goes with.
+function heard(c) {
+  if (!DEVICE.beside || !S.selection) return c.all;
+  return c.all.concat(S.selection.notes).sort(function (a, b) { return a.start - b.start || a.pitch - b.pitch; });
 }
 function insert() {
   var c = chosenNotes();
@@ -3843,8 +3875,10 @@ function insert() {
   var r;
   try {
     var beats = Math.max(c.beats, Math.ceil(c.beats));
-    r = S.target === 0 ? Live.newClip(c.notes, beats, c.title, c.more)
-      : S.target === 1 ? Live.arrangementClip(c.notes, beats, c.title, c.more)
+    var where = TARGETS[S.target];
+    r = where === 'New Track' ? Live.newTrackClip(c.notes, beats, c.title, c.more)
+      : where === 'New Clip' ? Live.newClip(c.notes, beats, c.title, c.more)
+      : where === 'Arrangement' ? Live.arrangementClip(c.notes, beats, c.title, c.more)
       : c.more.length ? { ok: false, message: 'This Clip takes one part. Choose a part, then try again.' }
       : Live.replaceInClip(c.notes, beats);
   } catch (e) { r = { ok: false, message: String(e.message || e) }; }
@@ -3866,7 +3900,7 @@ function choose(i) {
   S.chosen = i;
   player.stop();
   var c = chosenNotes();
-  if (c) player.play(c.all, S.song.tempo, function () { mgraphics.redraw(); });
+  if (c) player.play(heard(c), S.song.tempo, function () { mgraphics.redraw(); });
   mgraphics.redraw();
 }
 

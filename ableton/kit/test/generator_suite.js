@@ -31,6 +31,7 @@ module.exports = function (o) {
     const d = load(o.bundle, { set });
     d.send('bang');
     if (o.selection && !opts.noClip) d.click('Use Clip');
+    if (o.beside && !opts.keepTarget) d.click('New Track');   // the shared tests start from New Clip
     return d;
   }
   function results(d) { return d.ctx.S.results; }
@@ -156,8 +157,25 @@ module.exports = function (o) {
     const e = load(o.bundle);
     e.send('restore', JSON.stringify(saved));
     e.send('bang');
-    assert.strictEqual(e.ctx.S.target, 1);
+    assert.strictEqual(e.ctx.S.target, d.ctx.S.target);
   });
+
+  if (o.beside) {
+    test(o.name + ': a suggestion goes on a new track beside this one, and is heard with the music', () => {
+      const d = device({ keepTarget: true });
+      assert.ok(d.texts().includes('New Track'));
+      const r = results(d)[0];
+      d.click('Insert');
+      assert.ok(!d.ctx.S.warn, d.ctx.S.status);
+      assert.strictEqual(d.set.tracks.length, 1 + r.parts.length);
+      assert.strictEqual(d.set.slots[0].props.has_clip, 0, 'nothing written over the music');
+      assert.strictEqual(d.set.tracks[1].kids.clip_slots[0].kids.clip.notes.length, r.parts[0].notes.length);
+      d.click('Play');
+      d.run(60000);
+      const ons = d.midi().filter((b, i) => i % 3 === 0 && (b & 0xF0) === 0x90).length;
+      assert.ok(ons >= r.parts[0].notes.length + TUNE.length, 'the original is heard too');
+    });
+  }
 
   return { device, TUNE, balanced };
 };
