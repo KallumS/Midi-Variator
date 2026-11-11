@@ -34,6 +34,14 @@ var Live = (function () {
                      'Mixolydian', 'Aeolian', 'Major Pentatonic', 'Minor Pentatonic', 'Major Blues', 'Minor Blues',
                      'Whole Tone', 'Diminished Whole-Half', 'Diminished Half-Whole'];
 
+  // Live's scale (a root pitch class and a name) as the family's key, or
+  // null for a scale ScaleView does not have.
+  function keyOf(pc, name) {
+    var sc = SCALE[String(name)];
+    if (!sc) return null;
+    return { root: ROOTS.indexOf((MINORISH[sc] ? MINOR_SIDE : MAJOR_SIDE)[((+pc % 12) + 12) % 12]) + 1, scale: sc };
+  }
+
   function song() {
     var s = api('live_set');
     var out = { tempo: +one(s, 'tempo') || 120, num: +one(s, 'signature_numerator') || 4,
@@ -42,9 +50,8 @@ var Live = (function () {
     var mode = s.get('scale_mode');
     if (mode !== undefined && mode !== null) {
       var name = String(one(s, 'scale_name')), pc = +one(s, 'root_note');
-      var sc = SCALE[name];
       out.liveScale = { on: !!+(Array.isArray(mode) ? mode[0] : mode), name: name, root: pc };
-      if (sc) out.key = { root: ROOTS.indexOf((MINORISH[sc] ? MINOR_SIDE : MAJOR_SIDE)[((pc % 12) + 12) % 12]) + 1, scale: sc };
+      out.key = keyOf(pc, name);
     }
     return out;
   }
@@ -280,5 +287,6 @@ var Live = (function () {
   };
 
   return { song: song, clipNotes: clipNotes, newClip: newClip, newTrackClip: newTrackClip, replaceInClip: replaceInClip,
-           arrangementClip: arrangementClip, drumTrack: drumTrack, Player: Player, ROOTS: ROOTS, SCALE_NAMES: SCALE_NAMES };
+           arrangementClip: arrangementClip, drumTrack: drumTrack, Player: Player, ROOTS: ROOTS, SCALE_NAMES: SCALE_NAMES,
+           keyOf: keyOf };
 })();

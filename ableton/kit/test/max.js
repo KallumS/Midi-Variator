@@ -112,8 +112,9 @@ function load(bundlePath, opts) {
   }
   const tasks = [];
   class Task {
-    constructor(fn) { this.fn = fn; this.on = false; tasks.push(this); }
-    repeat() { this.on = true; } cancel() { this.on = false; }
+    constructor(fn) { this.fn = fn; this.on = false; this.due = null; tasks.push(this); }
+    repeat() { this.on = true; } cancel() { this.on = false; this.due = null; }
+    schedule(ms) { this.due = now + (ms || 0); }
   }
   const buffers = opts.buffers || {};
   // buffers[name]: a Float64Array (one channel), or { chans: [Float64Array], rate } for a sound
@@ -151,12 +152,21 @@ function load(bundlePath, opts) {
     writestring(s) { this.text += s; this.position = this.text.length; }
     close() { if (this.mode !== 'read') disk[this.path] = this.text; this.isopen = false; }
   }
+  // Max's Dict: named dictionaries, read and written as JSON.
+  const dicts = opts.dicts || {};
+  let dictCount = 0;
+  class Dict {
+    constructor(name) { this.name = name || ('u' + (++dictCount)); if (!dicts[this.name]) dicts[this.name] = '{}'; }
+    parse(text) { dicts[this.name] = String(text); }
+    stringify() { return dicts[this.name]; }
+  }
   let now = 0;
   const realDate = Date;
   const FakeDate = function () { return new realDate(now); };
   FakeDate.now = () => now;
   const ctx = {
-    mgraphics: mg, LiveAPI, Task, Buffer, File, Date: FakeDate, patcher: { filepath: opts.filepath || '/Live/User Library/Device.amxd' }, max: { getcolor: () => [0.2, 0.2, 0.2, 1] },
+    mgraphics: mg, LiveAPI, Task, Buffer, File, Dict, Date: FakeDate,
+    outlet_dictionary: (i, obj) => out.push([i, 'dictionary', JSON.parse(JSON.stringify(obj))]), patcher: { filepath: opts.filepath || '/Live/User Library/Device.amxd' }, max: { getcolor: () => [0.2, 0.2, 0.2, 1] },
     box: { rect: [0, 0, opts.width || 860, opts.height || 169] },
     outlet: (...a) => out.push(a), post: (s) => posted.push(String(s)),
     console, Math, JSON
@@ -179,11 +189,23 @@ function load(bundlePath, opts) {
     },
     // Advance the clock and run the ticking tasks.
     run(ms) {
-      for (let t = 0; t < ms; t += 4) { now += 4; tasks.filter((k) => k.on).forEach((k) => k.fn()); }
+      for (let t = 0; t < ms; t += 4) {
+        now += 4;
+        tasks.forEach((k) => { if (k.due !== null && now >= k.due) { k.due = null; k.fn(); } });
+        tasks.filter((k) => k.on).forEach((k) => k.fn());
+      }
     },
     midi() { return out.filter((a) => a[0] === 0).map((a) => a[1]); },
     saved() { const s = out.filter((a) => a[0] === 1 && a[1] === 'set'); return s.length ? JSON.parse(s[s.length - 1][2]) : null; },
-    send(msg, ...args) { return ctx[msg](...args); }
+    send(msg, ...args) { return ctx[msg](...args); },
+    // A MIDI Tool's apply: Live's notes and context in, the notes written out.
+    tool(notes, context) {
+      const before = out.length;
+      ctx.msg_dictionary(Object.assign({ notes: notes || [] }, context || {}));
+      const sent = out.slice(before).filter((a) => a[0] === 0 && a[1] === 'dictionary');
+      return sent.length ? sent[sent.length - 1][2].notes : null;
+    },
+    bangs() { return out.filter((a) => a[0] === 2 && a[1] === 'bang').length; }
   };
   return api;
 }

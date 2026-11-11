@@ -15,9 +15,10 @@ drift off, because none of them is made from the one before it. The
 original is kept inside every variation, so you can always vary it again or
 put it back.
 
-**In Ableton Live:** `ableton/` has Midi Variator as a Max for Live MIDI effect. See [`ableton/README.md`](ableton/README.md).
+**In Ableton Live:** `ableton/` has Midi Variator as a Max for Live MIDI effect. See [`ableton/README.md`](ableton/README.md). It is also a **MIDI Tool** in the clip view's **Transform** panel (`ableton/tool/`).
 
 ![Midi Variator in Ableton Live](ableton/window.png)
+![Midi Variator in Live's Transform panel](ableton/tool/window.png)
 
 ## Installing
 

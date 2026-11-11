@@ -31,8 +31,12 @@ var Gfx = (function () {
   };
   Host.prototype.v = function (k) { return this.fx.v[this.slots[k]]; };
   Host.prototype.set = function (k, x) { this.fx.v[this.slots[k]] = x; };
+  // Every colour the script sets goes through Palette.tone: the house scheme
+  // becomes Live's, other greys lose their tint, other colours stay.
+  function toned(r, g, b) { return typeof Palette !== 'undefined' ? Palette.tone(r, g, b) : [clamp(r), clamp(g), clamp(b)]; }
   Host.prototype.colour = function () {
-    this.g.set_source_rgba(clamp(this.v('r')), clamp(this.v('g')), clamp(this.v('b')), clamp(this.v('a')));
+    var c = toned(this.v('r') || 0, this.v('g') || 0, this.v('b') || 0);
+    this.g.set_source_rgba(c[0], c[1], c[2], clamp(this.v('a')));
   };
   // EEL2 strings are bytes; REAPER draws them as UTF-8.
   function utf8(s) { try { return decodeURIComponent(escape(s)); } catch (e) { return s; } }
@@ -96,7 +100,8 @@ var Gfx = (function () {
     return 0;
   };
   Host.prototype.gfx_gradrect = function (fx, x, y, w, h, r, g, b, a) {
-    this.g.set_source_rgba(clamp(r), clamp(g), clamp(b), clamp(num(a, 1)));
+    var c = toned(r || 0, g || 0, b || 0);
+    this.g.set_source_rgba(c[0], c[1], c[2], clamp(num(a, 1)));
     this.g.rectangle(x, y, w, h); this.g.fill();
     return 0;
   };
@@ -206,5 +211,27 @@ var Gfx = (function () {
     return out;
   }
 
-  return { Host: Host, parseMenu: parseMenu };
+  // gfx_clear's colour (r + g * 256 + b * 65536) as Live draws it.
+  function clearColour(c) { return toned((c & 255) / 255, ((c >> 8) & 255) / 255, ((c >> 16) & 255) / 255); }
+
+  // The menu gfx_showmenu asked for, drawn the same in every device.
+  var ITEM_H = 20;
+  function drawMenu(g, r, items, hover) {
+    var P = Palette.C, rgb = Palette.rgb, c;
+    c = rgb(P.popup); g.set_source_rgba(c[0], c[1], c[2], 1); g.rectangle(r[0], r[1], r[2], r[3]); g.fill();
+    c = rgb(P.edge); g.set_source_rgba(c[0], c[1], c[2], 1); g.set_line_width(1); g.rectangle(r[0] + 0.5, r[1] + 0.5, r[2] - 1, r[3] - 1); g.stroke();
+    items.forEach(function (it, i) {
+      var y = r[1] + 4 + i * ITEM_H;
+      if (it.rule) { c = rgb(P.rule); g.set_source_rgba(c[0], c[1], c[2], 1); g.rectangle(r[0] + 6, y + ITEM_H / 2, r[2] - 12, 1); g.fill(); return; }
+      var on = i === hover && it.index && !it.grey;
+      if (on) { c = rgb(P.accent); g.set_source_rgba(c[0], c[1], c[2], 1); g.rectangle(r[0] + 2, y, r[2] - 4, ITEM_H); g.fill(); }
+      c = rgb(on ? P.ink : it.grey || it.title ? P.dim : P.text);
+      g.set_source_rgba(c[0], c[1], c[2], 1);
+      g.move_to(r[0] + 22 + it.depth * 12, y + 14);
+      g.show_text(it.label);
+      if (it.tick) { g.move_to(r[0] + 7 + it.depth * 12, y + 14); g.show_text('✓'); }
+    });
+  }
+
+  return { Host: Host, parseMenu: parseMenu, clearColour: clearColour, drawMenu: drawMenu, ITEM_H: ITEM_H };
 })();

@@ -228,13 +228,13 @@ function paint() {
   gset('w', sz[0]); gset('h', sz[1]);
   if (R.started && !R.quit && R.pending && !R.error && !R.menu) frame(R.pending);
   var c = gnum('clear');
-  if (c >= 0) { g.set_source_rgba((c & 255) / 255, ((c >> 8) & 255) / 255, ((c >> 16) & 255) / 255, 1); g.rectangle(0, 0, sz[0], sz[1]); g.fill(); }
+  if (c >= 0) { var k = Gfx.clearColour(c); g.set_source_rgba(k[0], k[1], k[2], 1); g.rectangle(0, 0, sz[0], sz[1]); g.fill(); }
   R.lastOps.forEach(function (op) { g[op[0]].apply(g, op[1]); });
   if (R.menu) drawMenu(g, sz);
 }
 
 // The menu gfx.showmenu asked for, over the window.
-var ITEM_H = 20;
+var ITEM_H = Gfx.ITEM_H;
 function menuRect(sz) {
   var m = R.menu, w = 40;
   mgraphics.select_font_face('Arial', 'normal', 'normal');
@@ -244,21 +244,8 @@ function menuRect(sz) {
   return [Math.max(0, Math.min(m.x, sz[0] - w - 2)), Math.max(0, Math.min(m.y, sz[1] - h - 2)), w, h];
 }
 function drawMenu(g, sz) {
-  var r = menuRect(sz), m = R.menu;
-  g.set_source_rgba(0.165, 0.184, 0.216, 1); g.rectangle(r[0], r[1], r[2], r[3]); g.fill();
-  g.set_source_rgba(0.227, 0.251, 0.29, 1); g.set_line_width(1); g.rectangle(r[0] + 0.5, r[1] + 0.5, r[2] - 1, r[3] - 1); g.stroke();
   g.select_font_face('Arial', 'normal', 'normal'); g.set_font_size(12);
-  m.items.forEach(function (it, i) {
-    var y = r[1] + 4 + i * ITEM_H;
-    if (it.rule) { g.set_source_rgba(0.227, 0.251, 0.29, 1); g.rectangle(r[0] + 6, y + ITEM_H / 2, r[2] - 12, 1); g.fill(); return; }
-    var on = i === m.hover && it.index && !it.grey;
-    if (on) { g.set_source_rgba(1, 0.949, 0, 1); g.rectangle(r[0] + 2, y, r[2] - 4, ITEM_H); g.fill(); }
-    var ink = on ? [0.078, 0.09, 0.11] : it.grey || it.title ? [0.714, 0.737, 0.776] : [0.867, 0.882, 0.906];
-    g.set_source_rgba(ink[0], ink[1], ink[2], 1);
-    g.move_to(r[0] + 22 + it.depth * 12, y + 14);
-    g.show_text(it.label);
-    if (it.tick) { g.move_to(r[0] + 7 + it.depth * 12, y + 14); g.show_text('✓'); }
-  });
+  Gfx.drawMenu(g, menuRect(sz), R.menu.items, R.menu.hover);
 }
 function menuAt(x, y) {
   var r = menuRect(size());

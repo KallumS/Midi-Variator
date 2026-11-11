@@ -18,6 +18,7 @@
     }
   },
   "scripts": [
+    "kit/palette.js",
     "kit/runtime/polyfill.js",
     "kit/runtime/lua_parse.js",
     "kit/runtime/lua_runtime.js",

@@ -17,7 +17,11 @@ import struct
 import sys
 
 KIT = os.path.dirname(os.path.abspath(__file__))
-TYPES = {"midi": b"mmmm", "audio": b"aaaa", "instrument": b"iiii"}
+TYPES = {"midi": b"mmmm", "audio": b"aaaa", "instrument": b"iiii",
+         # Live 12's MIDI Tools, as Ableton's maxdevtools (maxdiff/amxd_textconv.py) names them
+         "generator": b"nagg", "transformation": b"natt"}
+# Live's clip-view panel for a MIDI Tool, the size of Max's own templates.
+TOOL_WINDOW = [152, 147]
 HEIGHT = 169
 
 
@@ -105,11 +109,27 @@ class Patch:
             "is_mpe": 0,
         }}
 
+    def tool_json(self, desc, width, kind):
+        """A MIDI Tool's patcher: the device's, plus the project block that
+        says which kind of tool it is (Max's amxdtype is the header's
+        four letters as a number) and the keys Max reads with it."""
+        j = self.json(desc, width)
+        p = j["patcher"]
+        p["openrect"] = [0.0, 0.0, float(width), float(desc["window"][1])]
+        p["minimum_live_version"] = "12.0"
+        p["project"] = {
+            "version": 1, "creationdate": 3590052493, "modificationdate": 3590052493,
+            "viewrect": [25.0, 124.0, 300.0, 500.0], "autoorganize": 1, "hideprojectwindow": 1,
+            "showdependencies": 1, "autolocalize": 0, "contents": {"patchers": {}}, "layout": {},
+            "searchpath": {}, "detailsvisible": 0, "amxdtype": int.from_bytes(TYPES[kind], "big"),
+            "readonly": 0, "devpathtype": 0, "devpath": ".", "sortmode": 0, "viewmode": 0, "includepackages": 0}
+        return j
 
-def window(p, desc, width, ins=1, outs=2):
-    return p.add(maxclass="v8ui", at=(20, 200), size=(width, HEIGHT), ins=ins, outs=outs,
+
+def window(p, desc, width, ins=1, outs=2, height=HEIGHT):
+    return p.add(maxclass="v8ui", at=(20, 200), size=(width, height), ins=ins, outs=outs,
                  filename=desc["_bundle"], parameter_enable=0, border=0,
-                 presentation=1, presentation_rect=[0.0, 0.0, float(width), float(HEIGHT)])
+                 presentation=1, presentation_rect=[0.0, 0.0, float(width), float(height)])
 
 
 def midi_effect(desc, width):
@@ -127,6 +147,32 @@ def midi_effect(desc, width):
     p.wire(ui, 1, st, 0)
     p.wire(st, 0, pre, 0)
     p.wire(pre, 0, ui, 0)
+    return p
+
+
+def midi_tool(desc, width):
+    """A Live 12 MIDI Tool (Generator or Transformation): Live's notes and
+    context in, joined into one dictionary for the window (miditool.js),
+    which answers with the notes to write. The window's third outlet bangs
+    [live.miditool.in] to ask Live to apply again after a setting changes."""
+    p = Patch()
+    tin = p.add("live.miditool.in", at=(20, 20), size=(110, 22), ins=1, outs=2, outtype=["", ""])
+    join = p.add("dict.join", at=(20, 60), size=(70, 22), ins=2, outs=1, outtype=["dictionary"])
+    dev = p.add("live.thisdevice", at=(160, 20), size=(90, 22), outs=3, outtype=["bang", "int", "int"])
+    ui = window(p, desc, width, ins=1, outs=3, height=desc["window"][1])
+    tout = p.add("live.miditool.out", at=(20, 420), size=(110, 22), ins=1, outs=0)
+    st = p.state(at=(420, 420))
+    pre = p.add("prepend restore", at=(420, 460), size=(95, 22), outs=1)
+    # The context (right) arrives first and is held; the notes (left) send the join.
+    p.wire(tin, 1, join, 1)
+    p.wire(tin, 0, join, 0)
+    p.wire(join, 0, ui, 0)
+    p.wire(dev, 0, ui, 0)
+    p.wire(ui, 0, tout, 0)
+    p.wire(ui, 1, st, 0)
+    p.wire(st, 0, pre, 0)
+    p.wire(pre, 0, ui, 0)
+    p.wire(ui, 2, tin, 0)
     return p
 
 
@@ -294,7 +340,8 @@ def jsfx_audio(desc, width):
     return p
 
 
-TEMPLATES = {"midi_effect": midi_effect, "jsfx_midi": jsfx_midi, "jsfx_audio": jsfx_audio, "inline_midi": inline_midi}
+TEMPLATES = {"midi_effect": midi_effect, "jsfx_midi": jsfx_midi, "jsfx_audio": jsfx_audio, "inline_midi": inline_midi,
+             "midi_tool": midi_tool}
 
 
 def amxd(kind, patcher):
@@ -315,17 +362,22 @@ def build(desc_path, check=False):
     width = desc.get("width", 860)
     if desc.get("template") == "inline_midi":
         width = desc.get("window", [200, 100])[0]
+    if desc.get("template") == "midi_tool":
+        desc.setdefault("window", TOOL_WINDOW)
+        width = desc["window"][0]
     desc["_base"] = base
     if desc.get("template") in ("jsfx_midi", "jsfx_audio") and "window" not in desc:
         import re
         main = desc["files"][desc["device"]["main"]]
         m = re.search(rb"^@gfx\s+(\d+)\s+(\d+)", read(os.path.join(base, main)), re.M)
         desc["window"] = [int(m.group(1)), int(m.group(2))] if m else [800, 600]
-    patch = TEMPLATES[desc.get("template", "midi_effect")](desc, width).json(desc, width)
+    built = TEMPLATES[desc.get("template", "midi_effect")](desc, width)
+    kind = desc.get("kind", "midi")
+    patch = built.tool_json(desc, width, kind) if desc.get("template") == "midi_tool" else built.json(desc, width)
     written, stale = [], []
     for name, data in ((desc["_bundle"], bundle(desc, base).encode("utf-8")),
                        (slug + ".maxpat", (json.dumps(patch, indent=1) + "\n").encode("utf-8")),
-                       (desc["name"] + ".amxd", amxd(desc.get("kind", "midi"), patch))):
+                       (desc["name"] + ".amxd", amxd(kind, patch))):
         path = os.path.join(base, name)
         if check:
             if not os.path.exists(path) or read(path) != data:

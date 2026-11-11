@@ -1,7 +1,7 @@
 /* The family's look, drawn with Max's mgraphics in a [v8ui].
  *
- * Colours are Middaw's HousePalette (MiddawCore/Palette.swift): cool greys,
- * the yellow accent for what is on, every word 7:1 on its surface. A control
+ * Colours are Palette's (palette.js), after Ableton Live 8: neutral greys,
+ * the amber accent for what is on, every word 7:1 on its surface. A control
  * registers its rectangle while it is painted, so a click goes to whatever
  * was drawn under it last paint - no layout is kept twice.
  */
@@ -10,11 +10,13 @@ var UI = (function () {
   function rgb(hex, a) {
     return [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255, a === undefined ? 1 : a];
   }
+  // The colours are Palette's (palette.js): Live 8's neutral greys and amber.
+  var P = Palette.C;
   var C = {
-    accent: rgb(0xFFF200), accentHeld: rgb(0xD1C600), control: rgb(0xA9AFBA), controlHeld: rgb(0x8F96A2),
-    ground: rgb(0x23272E), raised: rgb(0x2A2F37), sunken: rgb(0x1A1D23), rule: rgb(0x3A404A),
-    edge: rgb(0x6D7581), ink: rgb(0x14171C), text: rgb(0xDDE1E7), dim: rgb(0xB6BCC6),
-    label: rgb(0xBFC5CE), warn: rgb(0xD2483F), warnText: rgb(0xFFA6A0)
+    accent: rgb(P.accent), accentHeld: rgb(P.accentHeld), control: rgb(P.control), controlHeld: rgb(P.controlHeld),
+    ground: rgb(P.ground), raised: rgb(P.raised), sunken: rgb(P.sunken), rule: rgb(P.rule),
+    edge: rgb(P.edge), ink: rgb(P.ink), text: rgb(P.text), dim: rgb(P.dim),
+    label: rgb(P.label), warn: rgb(P.warn), warnText: rgb(P.warnText), mark: rgb(P.mark), note: rgb(P.note)
   };
 
   var g = null, hits = [], drag = null, FONT = 'Arial';
@@ -86,6 +88,24 @@ var UI = (function () {
     });
   }
 
+  // The same, in one line for a small panel (a MIDI Tool's): the label at
+  // the left, the value at the right, the arrows at the ends.
+  function row(label, names, index, x, y, w, h, onChange) {
+    round(x, y, w, h, 3, C.sunken);
+    frame(x, y, w, h, C.rule);
+    text('‹', x + 1, y, 8, h, C.dim, 10, 1);
+    text('›', x + w - 9, y, 8, h, C.dim, 10, 1);
+    var lw = Math.round((w - 18) * 0.42);
+    text(label, x + 10, y, lw - 2, h, C.label, 9, 0);
+    text(names[index - 1] === undefined ? '' : names[index - 1], x + 10 + lw, y, w - 20 - lw, h, C.text, 9, 2);
+    var n = names.length, last = index;
+    function to(i) { i = Math.max(1, Math.min(n, i)); if (i !== last) { last = i; onChange(i); } }
+    hit(x, y, w, h, {
+      click: function (px) { to(px < x + w / 3 ? index - 1 : index + 1); },
+      drag: function (dy) { to(index - Math.round(dy / 8)); }
+    });
+  }
+
   function toggle(label, on, x, y, w, h, onChange) {
     round(x, y, w, h, 3, on ? C.accent : C.control);
     text(label, x + 4, y, w - 8, h, C.ink, 10, 1, true);
@@ -114,5 +134,5 @@ var UI = (function () {
   }
 
   return { C: C, begin: begin, rect: rect, round: round, frame: frame, text: text, fit: fit, measure: measure,
-           hit: hit, button: button, stepper: stepper, toggle: toggle, click: click, dragTo: dragTo, find: find };
+           hit: hit, button: button, stepper: stepper, row: row, toggle: toggle, click: click, dragTo: dragTo, find: find };
 })();
